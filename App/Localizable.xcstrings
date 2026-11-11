@@ -1,0 +1,924 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "%@  Items: %@ / %@ · Copied: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@  Items: %@ / %@ · Copied: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@  %@ / %@ 件・コピー済み %@"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Activity Log": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activity Log"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作業ログ"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Add": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追加"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Add Input Folders…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add Input Folders…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力フォルダを追加…"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Cancel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャンセル"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Cancellation requested. Waiting for processing to stop and cleanup to finish…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancellation requested. Waiting for processing to stop and cleanup to finish…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャンセルを要求しました。処理停止と後片付けを待っています…"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Checking configuration…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking configuration…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "構成を確認中…"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Choose Destination Parent Folder…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose Destination Parent Folder…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存先親フォルダを選択…"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Current item: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current item: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在の項目: %@"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Current merge (settings at start)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current merge (settings at start)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行中の内容（開始時点）"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Detailed per-file log": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detailed per-file log"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルごとの詳細ログ"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Details": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Details"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "詳細"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失敗"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "If the destination does not support an attribute, the warning shows the affected path and attribute, and the result is “Completed with warnings”.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "If the destination does not support an attribute, the warning shows the affected path and attribute, and the result is “Completed with warnings”."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存先が属性に対応せず保持できなかった場合は、対象パスと属性が警告に表示され、結果は「警告ありで完了」になります。"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Input folders (drop from Finder)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input folders (drop from Finder)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力フォルダ（Finder からドロップできます）"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Keeps Finder tags and additional data used by some Mac files. Leave this on for normal use.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keeps Finder tags and additional data used by some Mac files. Leave this on for normal use."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finderで付けたタグや、一部のMac用ファイルに付属するデータを引き継ぎます。通常はオンのままで使えます。"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Keeps the original file dates shown in Finder.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keeps the original file dates shown in Finder."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finderに表示されるファイルの「作成日」と「変更日」を引き継ぎます。"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Keeps the original read, write, and execute permissions. Leave this on for normal use.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keeps the original read, write, and execute permissions. Leave this on for normal use."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルの読み取り・書き込み・実行の権限を引き継ぎます。通常はオンのままで使えます。"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Merge": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Merge"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "統合"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Merge the contents of multiple folders into a new folder. Inputs remain unchanged.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Merge the contents of multiple folders into a new folder. Inputs remain unchanged."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "複数フォルダの中身を、新しいフォルダに統合します。入力は変更しません。"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Merged Folder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Merged Folder"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "統合フォルダ"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Next merge": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next merge"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次回の実行予定"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Not selected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not selected"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未選択"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Only folders can be added: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only folders can be added: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダ以外は追加できません: %@"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Output folder name": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Output folder name"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出力フォルダ名"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Output: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Output: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作成先: %@"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Preparing…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "準備中…"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Preserve Finder tags and other Mac metadata": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preserve Finder tags and other Mac metadata"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finderタグなど、Mac固有の情報も保持"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Preserve attributes": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preserve attributes"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "属性の保持"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Preserve file creation and modification dates": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preserve file creation and modification dates"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルの作成日・変更日を保持"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Preserve file permissions": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preserve file permissions"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルのアクセス権を保持"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Preserve folder creation and modification dates": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preserve folder creation and modification dates"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダの作成日・変更日を保持"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Previous merge (settings at start)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Previous merge (settings at start)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前回の実行内容（開始時点）"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Remove": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Select a destination": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select a destination"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存先を選択してください"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Select a destination parent folder.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select a destination parent folder."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存先親フォルダを選択してください。"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Select input folders and a destination.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select input folders and a destination."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力フォルダと保存先を選択してください。"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Select input folders.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select input folders."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力フォルダを追加してください。"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Shooting information (such as EXIF) embedded in Takeout photos and videos, and accompanying JSON files, are copied as file contents regardless of these settings.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shooting information (such as EXIF) embedded in Takeout photos and videos, and accompanying JSON files, are copied as file contents regardless of these settings."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Takeoutの写真・動画に埋め込まれた撮影情報（EXIF等）や付属JSONは、チェック状態にかかわらずファイルの内容としてコピーされます。"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Show Merge Plan": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Merge Plan"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "処理内容を表示"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Show in Finder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show in Finder"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finder で表示"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "The technical names for Mac metadata are extended attributes and resource forks.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The technical names for Mac metadata are extended attributes and resource forks."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac固有の情報の技術的な名称は「拡張属性・リソースフォーク」です。"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Turn this on to keep the dates of the folders themselves. When folders at the same relative path are merged, the first one in the input list supplies the dates.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn this on to keep the dates of the folders themselves. When folders at the same relative path are merged, the first one in the input list supplies the dates."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダ自体の日付も記録として残したい場合にオンにします。同じ位置のフォルダを統合するときは、入力一覧で先にあるフォルダの日付を使います。"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Unknown": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unknown"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未確定"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Use as Destination": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use as Destination"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存先に設定"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "%@: %@: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: %@: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: %@: %@"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Attribute Warnings (%lld)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Attribute Warnings (%lld)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "属性警告（全 %lld 件）"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Omitted %lld lines": {
+      "extractionState": "manual",
+      "generatesSymbol": false,
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Omitted %lld line"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Omitted %lld lines"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 行を省略"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld additional warnings": {
+      "extractionState": "manual",
+      "generatesSymbol": false,
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld additional warning"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld additional warnings"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "ほか %lld 件"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

@@ -1,6 +1,6 @@
 # Folder Merger for macOS
 
-複数フォルダの中身を、指定した名前の新しいフォルダにまとめる日本語の macOS アプリです。入力フォルダ自体の名前は含めず、その直下からの相対パスを保ちます。入力を移動・改名・削除せず、内容と更新日時も変更しません。既存フォルダへの追記機能はありません。
+複数フォルダの中身を、指定した名前の新しいフォルダにまとめる日本語・英語対応の macOS アプリです。入力フォルダ自体の名前は含めず、その直下からの相対パスを保ちます。入力を移動・改名・削除せず、内容と更新日時も変更しません。既存フォルダへの追記機能はありません。
 
 ## 動作環境
 
@@ -46,12 +46,39 @@ Xcode で `FolderMerger.xcodeproj` を開き、FolderMerger スキームで Run 
 
 ## 属性の保持
 
-| 設定 | 初回既定値 | 対象 |
+| 設定 | 初回既定値 | 説明 |
 | --- | --- | --- |
-| ファイルの作成日・変更日を保持 | オン | birthtime と mtime を独立して保持 |
-| ファイルのアクセス権を保持 | オン | 権限ビット `0777` のみ |
-| フォルダの作成日・変更日を保持 | オフ | 入力ルートを除くフォルダ |
-| 拡張属性・リソースフォークを保持 | オフ | ファイルと入力ルートを除くフォルダ |
+| ファイルの作成日・変更日を保持 | オン | Finderに表示されるファイルの「作成日」と「変更日」を引き継ぎます。 |
+| ファイルのアクセス権を保持 | オン | ファイルの読み取り・書き込み・実行の権限を引き継ぎます。通常はオンのままで使えます。 |
+| フォルダの作成日・変更日を保持 | オフ | フォルダ自体の日付も記録として残したい場合にオンにします。同じ位置のフォルダを統合するときは、入力一覧で先にあるフォルダの日付を使います。 |
+| Finderタグなど、Mac固有の情報も保持（技術名: 拡張属性・リソースフォーク） | オン | Finderで付けたタグや、一部のMac用ファイルに付属するデータを引き継ぎます。通常はオンのままで使えます。 |
+
+説明文は各チェック項目の直下に常時表示し、「詳細」で技術名、Takeout の内容、非対応時の警告を確認できます。Takeout の写真・動画に埋め込まれた撮影情報（EXIF 等）と付属 JSON は、チェック状態にかかわらずファイル内容としてコピーします。
+
+Mac 固有情報の初回既定値をオンに変更しました。既存コードでは設定の保存は `didSet` のみで、起動時に初期値を書き込む経路がないことを確認しました。キー `merge.preserveExtendedAttributes` が未保存ならオン、保存済みならオン・オフどちらの値も維持します。読込みは値を保存しません。
+
+### Attribute settings (English)
+
+| Setting | Initial default | Description |
+| --- | --- | --- |
+| Preserve file creation and modification dates | On | Keeps the original file dates shown in Finder. |
+| Preserve file permissions | On | Keeps the original read, write, and execute permissions. Leave this on for normal use. |
+| Preserve folder creation and modification dates | Off | Turn this on to keep the dates of the folders themselves. When folders at the same relative path are merged, the first one in the input list supplies the dates. |
+| Preserve Finder tags and other Mac metadata (extended attributes and resource forks) | On | Keeps Finder tags and additional data used by some Mac files. Leave this on for normal use. |
+
+Descriptions always appear below each checkbox. Details explains extended attributes and resource forks, Takeout contents, and unsupported attributes. Shooting information (such as EXIF) embedded in Takeout photos and videos, and accompanying JSON files, are copied as file contents regardless of these settings.
+
+The initial default for Mac metadata is now on. The previous code only saved settings in `didSet`; it did not write initial values at launch. If `merge.preserveExtendedAttributes` has no saved value, it defaults to on. Previously saved values, both on and off, remain unchanged. Reading the setting does not save it.
+
+If the destination does not support an attribute (`ENOTSUP` / `EOPNOTSUPP`), warnings show the affected relative path, attribute, and reason. Copying continues and the result is “Completed with warnings”. Other attribute errors stop the merge and trigger cleanup.
+
+### 表示言語 / Display language
+
+macOS のシステムまたはアプリごとの言語設定に従い、日本語・英語を表示します。対応外の言語は英語にフォールバックします。アプリ内の言語切替はありません。ファイル名・パスは翻訳しません。
+
+The app follows the macOS system or per-app language setting. Japanese and English are supported; other languages fall back to English. There is no in-app language switch. File names and paths are displayed unchanged.
+
+App とコアの文言はそれぞれ `Localizable.xcstrings` で管理し、開発言語は英語です。コアは Swift Package の資源バンドルから読み込み、SwiftPM と Xcode の両方でカタログをコンパイルします。
 
 4 項目は UserDefaults に保存し、次回起動時に復元します。安定キーは `merge.preserveFileDates`、`merge.preserveFilePermissions`、`merge.preserveDirectoryDates`、`merge.preserveExtendedAttributes` です。オフの属性は元から明示的に複製せず、OS の新規作成値を使います。権限オフ時のファイルは `open(..., 0666)` に umask を適用した権限になります。
 
@@ -96,7 +123,7 @@ ZIP 解凍、メタデータに基づく撮影日時の補正は行いません�
 
 ## 検証
 
-自動テストは実行時に一時領域へ作る人工データのみを使用します。既存 16 件を維持し、日時、権限、xattr、フォルダ後処理、入力順、非対応警告とその他のエラー、イベントと件数、キャンセル、説明スナップショットの 9 件を追加し、計 25 件が成功しました（2026-11-11）。同日の Xcode Debug ビルドも成功しました。
+自動テストは実行時に一時領域へ作る人工データのみを使用します。既存 25 件（日時、権限、xattr、フォルダ後処理、入力順、非対応警告とその他のエラー、イベントと件数、キャンセル、説明スナップショット等）に、設定既定値 3 件と日英リソース・全キー翻訳・複数形の 3 件を追加し、計 31 件が成功しました（2026-11-11）。同日の Xcode Debug ビルドも成功しました。生成アプリとコアの資源バンドルには en/ja の文字列・複数形辞書が含まれます。生成資源を使った一時検証プログラムで、英語・日本語と、フランス語指定時の英語フォールバックを確認しました。
 
 通常の一時領域での実測（`stat` / `listxattr` / `getxattr` による `stat -f '%SB %Sm %Sp'`・`xattr -l` 相当の確認）:
 

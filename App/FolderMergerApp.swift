@@ -3,6 +3,16 @@ import AppKit
 import UniformTypeIdentifiers
 import FolderMergerCore
 
+private func L(_ key: String, _ arguments: CVarArg...) -> String {
+    String(format: Bundle.main.localizedString(forKey: key, value: nil, table: nil),
+           locale: Locale(identifier: Bundle.main.preferredLocalizations.first ?? "en"), arguments: arguments)
+}
+
+private func LC(_ key: String, _ count: Int) -> String {
+    String(format: Bundle.main.localizedString(forKey: key, value: nil, table: nil),
+           locale: Locale(identifier: Bundle.main.preferredLocalizations.first ?? "en"), arguments: [count])
+}
+
 @main
 struct FolderMergerApp: App {
     var body: some Scene {
@@ -15,8 +25,8 @@ struct FolderMergerApp: App {
 final class MergeModel: ObservableObject {
     @Published var inputs: [URL] = []
     @Published var destination: URL?
-    @Published var name = "統合フォルダ"
-    @Published var validation = "入力フォルダと保存先を選択してください。"
+    @Published var name = L("Merged Folder")
+    @Published var validation = L("Select input folders and a destination.")
     @Published var busy = false
     @Published var status = ""
     @Published var errorMessage = ""
@@ -32,7 +42,7 @@ final class MergeModel: ObservableObject {
     @Published var directoryDates = UserDefaults.standard.object(forKey: "merge.preserveDirectoryDates") as? Bool ?? false {
         didSet { UserDefaults.standard.set(directoryDates, forKey: "merge.preserveDirectoryDates") }
     }
-    @Published var extendedAttributes = UserDefaults.standard.object(forKey: "merge.preserveExtendedAttributes") as? Bool ?? false {
+    @Published var extendedAttributes = MergePreferences.preserveExtendedAttributes(in: .standard) {
         didSet { UserDefaults.standard.set(extendedAttributes, forKey: "merge.preserveExtendedAttributes") }
     }
     @Published var detailedLog = false
@@ -65,8 +75,8 @@ final class MergeModel: ObservableObject {
         generation += 1
         let current = generation
         if clearOutput { output = nil }
-        guard let request else { validation = "保存先親フォルダを選択してください。"; return }
-        validation = "構成を確認中…"
+        guard let request else { validation = L("Select a destination parent folder."); return }
+        validation = L("Checking configuration…")
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let message: String
             do { try MergeEngine.validate(request); message = "" }
@@ -83,25 +93,27 @@ final class MergeModel: ObservableObject {
             var directory: ObjCBool = false
             if url.isFileURL, FileManager.default.fileExists(atPath: url.path, isDirectory: &directory), directory.boolValue {
                 inputs.append(url)
-            } else { errorMessage = "フォルダ以外は追加できません: \(url.path)" }
+            } else { errorMessage = L("Only folders can be added: %@", String(describing: url.path)) }
         }
         validate()
     }
     func chooseInputs() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.allowsMultipleSelection = true
-        panel.prompt = "追加"
+        panel.prompt = L("Add")
+        panel.message = L("Select input folders.")
         if panel.runModal() == .OK { add(panel.urls) }
     }
     func chooseDestination() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false; panel.canChooseDirectories = true
-        panel.prompt = "保存先に設定"
+        panel.prompt = L("Use as Destination")
+        panel.message = L("Select a destination parent folder.")
         if panel.runModal() == .OK { destination = panel.url; validate() }
     }
     func start() {
         guard !busy, validation.isEmpty, let request else { return }
-        busy = true; errorMessage = ""; output = nil; completed = 0; total = 0; status = "準備中…"
+        busy = true; errorMessage = ""; output = nil; completed = 0; total = 0; status = L("Preparing…")
         snapshot = MergePlanDescription(request: request)
         logLines = []; omittedLines = 0; counters = MergeCounters(); warnings = []; finalStatus = ""; currentItem = ""
         let detailed = detailedLog
@@ -125,7 +137,7 @@ final class MergeModel: ObservableObject {
                     if let p {
                         self.completed = p.completed; self.total = p.total; self.currentItem = p.currentItem
                         self.counters = p.counters
-                        self.status = "\(p.phase)  \(p.completed) / \(p.total == 0 ? "未確定" : String(p.total)) 件・コピー済み \(ByteCountFormatter.string(fromByteCount: p.bytesCopied, countStyle: .file))"
+                        self.status = L("%@  Items: %@ / %@ · Copied: %@", p.phase, String(describing: p.completed), String(describing: p.total == 0 ? L("Unknown") : String(p.total)), String(describing: ByteCountFormatter.string(fromByteCount: p.bytesCopied, countStyle: .file)))
                     }
                 }
             }
@@ -139,13 +151,13 @@ final class MergeModel: ObservableObject {
                 self.busy = false; self.cancellation = nil
                 self.output = result.output; self.counters = result.counters; self.warnings = result.warnings
                 self.finalStatus = result.status.label; self.status = result.status.label
-                self.errorMessage = result.status == .failure ? (result.error?.localizedDescription ?? "失敗") : ""
+                self.errorMessage = result.status == .failure ? (result.error?.localizedDescription ?? L("Failed")) : ""
                 self.validate(clearOutput: false)
             }
         }
     }
 
-    func cancel() { cancellation?.cancel(); status = "キャンセルを要求しました。処理停止と後片付けを待っています…" }
+    func cancel() { cancellation?.cancel(); status = L("Cancellation requested. Waiting for processing to stop and cleanup to finish…") }
 }
 
 struct ContentView: View {
@@ -155,8 +167,8 @@ struct ContentView: View {
         ScrollView {
         VStack(alignment: .leading, spacing: 14) {
             Text("Folder Merger").font(.largeTitle)
-            Text("複数フォルダの中身を、新しいフォルダに統合します。入力は変更しません。")
-            GroupBox("入力フォルダ（Finder からドロップできます）") {
+            Text(L("Merge the contents of multiple folders into a new folder. Inputs remain unchanged."))
+            GroupBox(L("Input folders (drop from Finder)")) {
                 VStack(alignment: .leading) {
                     List {
                         ForEach(Array(model.inputs.enumerated()), id: \.offset) { index, url in
@@ -166,11 +178,11 @@ struct ContentView: View {
                                     Text(url.path).font(.caption).textSelection(.enabled)
                                 }
                                 Spacer()
-                                Button("削除") { model.inputs.remove(at: index); model.validate() }
+                                Button(L("Remove")) { model.inputs.remove(at: index); model.validate() }
                             }
                         }
                     }.frame(minHeight: 140)
-                    Button("入力フォルダを追加…", action: model.chooseInputs)
+                    Button(L("Add Input Folders…"), action: model.chooseInputs)
                 }.padding(6)
             }
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(dropTarget ? Color.accentColor : .clear, lineWidth: 2))
@@ -189,50 +201,70 @@ struct ContentView: View {
             }
             .disabled(model.busy)
             HStack {
-                Button("保存先親フォルダを選択…", action: model.chooseDestination)
-                Text(model.destination?.path ?? "未選択").textSelection(.enabled)
+                Button(L("Choose Destination Parent Folder…"), action: model.chooseDestination)
+                Text(model.destination?.path ?? L("Not selected")).textSelection(.enabled)
             }.disabled(model.busy)
-            TextField("出力フォルダ名", text: $model.name)
+            TextField(L("Output folder name"), text: $model.name)
                 .textFieldStyle(.roundedBorder).disabled(model.busy)
                 .onChange(of: model.name) { _ in model.validate() }
-            Text("作成先: \(model.request?.output.path ?? "保存先を選択してください")")
+            Text(L("Output: %@", model.request?.output.path ?? L("Select a destination")))
                 .font(.callout).textSelection(.enabled)
-            GroupBox("属性の保持") {
+            GroupBox(L("Preserve attributes")) {
                 VStack(alignment: .leading) {
-                    Toggle("ファイルの作成日・変更日を保持", isOn: $model.fileDates)
-                    Toggle("ファイルのアクセス権を保持", isOn: $model.filePermissions)
-                    Toggle("フォルダの作成日・変更日を保持", isOn: $model.directoryDates)
-                    Toggle("拡張属性・リソースフォークを保持", isOn: $model.extendedAttributes)
+                    Toggle(L("Preserve file creation and modification dates"), isOn: $model.fileDates)
+                    Text(L("Keeps the original file dates shown in Finder.")).font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, 8)
+                    Toggle(L("Preserve file permissions"), isOn: $model.filePermissions)
+                    Text(L("Keeps the original read, write, and execute permissions. Leave this on for normal use.")).font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, 8)
+                    Toggle(L("Preserve folder creation and modification dates"), isOn: $model.directoryDates)
+                    Text(L("Turn this on to keep the dates of the folders themselves. When folders at the same relative path are merged, the first one in the input list supplies the dates.")).font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, 8)
+                    Toggle(L("Preserve Finder tags and other Mac metadata"), isOn: $model.extendedAttributes)
+                    Text(L("Keeps Finder tags and additional data used by some Mac files. Leave this on for normal use.")).font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, 8)
+                    DisclosureGroup(L("Details")) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(L("The technical names for Mac metadata are extended attributes and resource forks."))
+                            Text(L("Shooting information (such as EXIF) embedded in Takeout photos and videos, and accompanying JSON files, are copied as file contents regardless of these settings."))
+                            Text(L("If the destination does not support an attribute, the warning shows the affected path and attribute, and the result is “Completed with warnings”."))
+                        }.font(.callout).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }.disabled(model.busy).frame(maxWidth: .infinity, alignment: .leading)
             }
-            DisclosureGroup("処理内容を表示") {
+            DisclosureGroup(L("Show Merge Plan")) {
                 VStack(alignment: .leading, spacing: 6) {
                     if !model.busy {
-                        Text("次回の実行予定").bold()
+                        Text(L("Next merge")).bold()
                         if let plan = model.nextPlan {
                             ForEach(Array(plan.steps.enumerated()), id: \.offset) { _, step in Text(step.text) }
                         }
                     }
                     if let plan = model.snapshot {
-                        Text(model.busy ? "実行中の内容（開始時点）" : "前回の実行内容（開始時点）").bold()
+                        Text(model.busy ? L("Current merge (settings at start)") : L("Previous merge (settings at start)")).bold()
                         ForEach(Array(plan.steps.enumerated()), id: \.offset) { _, step in Text(step.text) }
                     }
                 }.textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             }
-            GroupBox("作業ログ") {
+            GroupBox(L("Activity Log")) {
                 VStack(alignment: .leading) {
-                    Toggle("ファイルごとの詳細ログ", isOn: $model.detailedLog).disabled(model.busy)
+                    Toggle(L("Detailed per-file log"), isOn: $model.detailedLog).disabled(model.busy)
                     Text(model.counters.description)
-                    Text("現在の項目: \(model.currentItem)")
-                    if model.omittedLines > 0 { Text("\(model.omittedLines) 行を省略") }
+                    Text(L("Current item: %@", model.currentItem))
+                    if model.omittedLines > 0 { Text(LC("Omitted %lld lines", model.omittedLines)) }
                     ScrollView {
                         Text(model.logLines.joined(separator: "\n"))
                             .font(.system(.caption, design: .monospaced)).textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }.frame(height: 140)
                     if !model.warnings.isEmpty {
-                        DisclosureGroup("属性警告（全 \(model.warnings.count) 件）") {
-                            Text((model.warnings.prefix(1000).map { "\($0.relativePath): \($0.attribute): \($0.reason)" } + (model.warnings.count > 1000 ? ["ほか \(model.warnings.count - 1000) 件"] : [])).joined(separator: "\n")).textSelection(.enabled)
+                        DisclosureGroup(L("Attribute Warnings (%lld)", model.warnings.count)) {
+                            Text((model.warnings.prefix(1000).map { L("%@: %@: %@", $0.relativePath, $0.displayName, $0.reason) } + (model.warnings.count > 1000 ? [LC("%lld additional warnings", model.warnings.count - 1000)] : [])).joined(separator: "\n")).textSelection(.enabled)
                         }
                     }
                     Text(model.finalStatus).bold()
@@ -249,11 +281,11 @@ struct ContentView: View {
                     .frame(maxHeight: 130)
             }
             HStack {
-                Button("統合", action: model.start).keyboardShortcut(.defaultAction)
+                Button(L("Merge"), action: model.start).keyboardShortcut(.defaultAction)
                     .disabled(model.busy || !model.validation.isEmpty)
-                if model.busy { Button("キャンセル", action: model.cancel) }
+                if model.busy { Button(L("Cancel"), action: model.cancel) }
                 if let output = model.output {
-                    Button("Finder で表示") { NSWorkspace.shared.activateFileViewerSelecting([output]) }
+                    Button(L("Show in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([output]) }
                 }
                 Spacer()
             }

@@ -152,7 +152,7 @@ final class MergeEngineTests: XCTestCase {
         try write(a, "same", data); try write(b, "same", data)
         let before = try [snapshot(a), snapshot(b)]
         var comparisons = 0
-        let output = try MergeEngine().merge(request) { if $0.phase == "内容を比較中" { comparisons += 1 } }
+        let output = try MergeEngine().merge(request) { if $0.phase == L("Comparing contents") { comparisons += 1 } }
         XCTAssertGreaterThanOrEqual(comparisons, 3)
         XCTAssertEqual(try fm.contentsOfDirectory(atPath: output.path), ["same"])
         XCTAssertEqual(try Data(contentsOf: output.appendingPathComponent("same")), data)
@@ -230,7 +230,7 @@ final class MergeEngineTests: XCTestCase {
         let alias = base.appendingPathComponent("alias")
         try fm.createSymbolicLink(at: alias, withDestinationURL: a)
         try assertFailure(MergeRequest(inputs: [a, alias], destination: parent, name: "out"))
-        try assertFailure(MergeRequest(inputs: [alias], destination: parent, name: "out"), containing: ["シンボリックリンク", alias.path])
+        try assertFailure(MergeRequest(inputs: [alias], destination: parent, name: "out"), containing: [L("Symbolic links cannot be used as input roots: %@", alias.path)])
         try assertFailure(MergeRequest(inputs: [a], destination: alias.appendingPathComponent("child"), name: "out"))
         let upper = base.appendingPathComponent("CASEINPUT")
         try fm.createDirectory(at: upper, withIntermediateDirectories: false)
@@ -265,7 +265,7 @@ final class MergeEngineTests: XCTestCase {
         XCTAssertThrowsError(try MergeEngine().merge(request, cancellation: token) { p in
             copied = p.bytesCopied
             if p.bytesCopied >= 2 * 1_048_576 { token.cancel() }
-        }) { XCTAssertTrue($0.localizedDescription.contains("キャンセル")) }
+        }) { XCTAssertEqual(($0 as? MergeError)?.kind, .cancelled) }
         XCTAssertEqual(copied, 2 * 1_048_576)
         XCTAssertFalse(fm.fileExists(atPath: request.output.path))
         try assertNoTemporary()
@@ -274,7 +274,7 @@ final class MergeEngineTests: XCTestCase {
     func testCancellationDuringScanAndCompare() throws {
         try write(a, "same", Data(repeating: 7, count: 3 * 1_048_576))
         try write(b, "same", Data(repeating: 7, count: 3 * 1_048_576))
-        for phase in ["入力を走査中", "内容を比較中"] {
+        for phase in [L("Scanning inputs"), L("Comparing contents")] {
             let token = CancellationToken()
             let before = try [snapshot(a), snapshot(b)]
             XCTAssertThrowsError(try MergeEngine().merge(request, cancellation: token) { if $0.phase == phase { token.cancel() } })
@@ -316,8 +316,8 @@ final class MergeEngineTests: XCTestCase {
         defer { if let temporary { _ = chmod(temporary.path, 0o700); try? fm.removeItem(at: temporary) } }
         XCTAssertThrowsError(try engine.merge(request)) {
             XCTAssertTrue($0.localizedDescription.contains("人工的な確定前エラー"))
-            XCTAssertTrue($0.localizedDescription.contains("一時フォルダを削除できません"))
             let reportedPath = self.parent.appendingPathComponent(temporary!.lastPathComponent).path
+            XCTAssertTrue($0.localizedDescription.contains(L("%@\nCannot remove the temporary folder: %@\n%@", "", reportedPath, "")))
             XCTAssertTrue($0.localizedDescription.contains(reportedPath), $0.localizedDescription)
         }
         XCTAssertFalse(fm.fileExists(atPath: request.output.path))
@@ -518,7 +518,7 @@ extension MergeEngineTests {
                 try fm.removeItem(at: XCTUnwrap(result.output))
             } else {
                 XCTAssertEqual(result.status, .failure); XCTAssertEqual(result.counters.errors, 1)
-                XCTAssertNil(result.output); XCTAssertTrue(result.error?.message.contains("変更日") == true)
+                XCTAssertNil(result.output); XCTAssertTrue(result.error?.message.contains(attributeDisplayName("変更日")) == true)
                 XCTAssertFalse(fm.fileExists(atPath: request.output.path))
             }
             try assertNoTemporary()
@@ -584,8 +584,8 @@ extension MergeEngineTests {
         XCTAssertEqual(snapshot.request.options, MergeOptions())
         XCTAssertNotEqual(snapshot.request.output, req.output)
         XCTAssertTrue(snapshot.steps.allSatisfy { $0.arguments == nil && !$0.text.contains("rsync") })
-        XCTAssertTrue(snapshot.steps.contains { $0.text.contains("フォルダの作成日・変更日: 保持しない") })
-        XCTAssertTrue(MergePlanDescription(request: req).steps.contains { $0.text.contains("フォルダの作成日・変更日: 保持") })
+        XCTAssertTrue(snapshot.steps.contains { $0.text == L("%@: %@", L("Folder creation and modification dates"), L("Do not preserve")) })
+        XCTAssertTrue(MergePlanDescription(request: req).steps.contains { $0.text == L("%@: %@", L("Folder creation and modification dates"), L("Preserve")) })
         XCTAssertTrue(snapshot.steps.contains { $0.text.contains("RENAME_EXCL") })
         XCTAssertTrue(snapshot.steps.contains { $0.text.contains(".DS_Store") })
     }

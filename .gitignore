@@ -1,0 +1,8 @@
+.build/
+DerivedData/
+xcuserdata/
+*.app
+.DS_Store
+.venv/
+/docs/research/
+/docs/github/

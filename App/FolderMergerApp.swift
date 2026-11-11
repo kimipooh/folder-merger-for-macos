@@ -23,11 +23,43 @@ final class MergeModel: ObservableObject {
     @Published var output: URL?
     @Published var completed = 0
     @Published var total = 0
+    @Published var fileDates = UserDefaults.standard.object(forKey: "merge.preserveFileDates") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(fileDates, forKey: "merge.preserveFileDates") }
+    }
+    @Published var filePermissions = UserDefaults.standard.object(forKey: "merge.preserveFilePermissions") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(filePermissions, forKey: "merge.preserveFilePermissions") }
+    }
+    @Published var directoryDates = UserDefaults.standard.object(forKey: "merge.preserveDirectoryDates") as? Bool ?? false {
+        didSet { UserDefaults.standard.set(directoryDates, forKey: "merge.preserveDirectoryDates") }
+    }
+    @Published var extendedAttributes = UserDefaults.standard.object(forKey: "merge.preserveExtendedAttributes") as? Bool ?? false {
+        didSet { UserDefaults.standard.set(extendedAttributes, forKey: "merge.preserveExtendedAttributes") }
+    }
+    @Published var detailedLog = false
+    @Published var snapshot: MergePlanDescription?
+    @Published var logLines: [String] = []
+    @Published var omittedLines = 0
+    @Published var counters = MergeCounters()
+    @Published var warnings: [AttributeWarning] = []
+    @Published var currentItem = ""
+    @Published var finalStatus = ""
+    var options: MergeOptions {
+        MergeOptions(fileDates: fileDates, filePermissions: filePermissions, directoryDates: directoryDates, extendedAttributes: extendedAttributes)
+    }
+    var nextPlan: MergePlanDescription? { request.map(MergePlanDescription.init) }
+    func appendLogs(_ lines: [String], omitted: Int) {
+        logLines.append(contentsOf: lines)
+        omittedLines += omitted
+        if logLines.count > 5000 {
+            omittedLines += logLines.count - 5000
+            logLines.removeFirst(logLines.count - 5000)
+        }
+    }
     private var generation = 0
     private var cancellation: CancellationToken?
 
     var request: MergeRequest? {
-        destination.map { MergeRequest(inputs: inputs, destination: $0, name: name) }
+        destination.map { MergeRequest(inputs: inputs, destination: $0, name: name, options: options) }
     }
     func validate(clearOutput: Bool = true) {
         generation += 1
@@ -70,34 +102,49 @@ final class MergeModel: ObservableObject {
     func start() {
         guard !busy, validation.isEmpty, let request else { return }
         busy = true; errorMessage = ""; output = nil; completed = 0; total = 0; status = "準備中…"
+        snapshot = MergePlanDescription(request: request)
+        logLines = []; omittedLines = 0; counters = MergeCounters(); warnings = []; finalStatus = ""; currentItem = ""
+        let detailed = detailedLog
         let token = CancellationToken()
         cancellation = token
         DispatchQueue.global(qos: .userInitiated).async {
-            let result = Result {
-                try MergeEngine().merge(request, cancellation: token) { p in
-                    DispatchQueue.main.async {
-                        self.completed = p.completed; self.total = p.total
+            // This buffer belongs to the serial worker; only batches cross to the main queue.
+            var lines: [String] = []
+            var omitted = 0
+            var latest: MergeProgress?
+            var latestEvent: MergeEvent?
+            var lastFlush = Date.distantPast
+            func flush(force: Bool = false) {
+                guard force || Date().timeIntervalSince(lastFlush) >= 0.15 else { return }
+                let batch = lines, dropped = omitted, p = latest, e = latestEvent
+                lines.removeAll(keepingCapacity: true); omitted = 0; latest = nil; latestEvent = nil
+                lastFlush = Date()
+                DispatchQueue.main.async {
+                    self.appendLogs(batch, omitted: dropped)
+                    if let e { self.status = e.message; self.counters = e.counters }
+                    if let p {
+                        self.completed = p.completed; self.total = p.total; self.currentItem = p.currentItem
+                        self.counters = p.counters
                         self.status = "\(p.phase)  \(p.completed) / \(p.total == 0 ? "未確定" : String(p.total)) 件・コピー済み \(ByteCountFormatter.string(fromByteCount: p.bytesCopied, countStyle: .file))"
                     }
                 }
             }
+            let result = MergeEngine().run(request, cancellation: token, detailedLog: detailed, event: { e in
+                if lines.count < 5000 { lines.append(e.line) } else { omitted += 1 }
+                latestEvent = e
+                flush()
+            }, progress: { p in latest = p; flush() })
+            flush(force: true)
             DispatchQueue.main.async {
                 self.busy = false; self.cancellation = nil
-                switch result {
-                case .success(let url): self.output = url; self.status = "統合が完了しました。"
-                case .failure(let error):
-                    if let mergeError = error as? MergeError, mergeError.kind == .cancelled {
-                        self.errorMessage = ""
-                        self.status = "キャンセルしました。一時データを片付けました。"
-                    } else {
-                        self.errorMessage = error.localizedDescription
-                        self.status = "処理を終了しました。"
-                    }
-                }
+                self.output = result.output; self.counters = result.counters; self.warnings = result.warnings
+                self.finalStatus = result.status.label; self.status = result.status.label
+                self.errorMessage = result.status == .failure ? (result.error?.localizedDescription ?? "失敗") : ""
                 self.validate(clearOutput: false)
             }
         }
     }
+
     func cancel() { cancellation?.cancel(); status = "キャンセルを要求しました。処理停止と後片付けを待っています…" }
 }
 
@@ -105,6 +152,7 @@ struct ContentView: View {
     @StateObject private var model = MergeModel()
     @State private var dropTarget = false
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 14) {
             Text("Folder Merger").font(.largeTitle)
             Text("複数フォルダの中身を、新しいフォルダに統合します。入力は変更しません。")
@@ -149,6 +197,47 @@ struct ContentView: View {
                 .onChange(of: model.name) { _ in model.validate() }
             Text("作成先: \(model.request?.output.path ?? "保存先を選択してください")")
                 .font(.callout).textSelection(.enabled)
+            GroupBox("属性の保持") {
+                VStack(alignment: .leading) {
+                    Toggle("ファイルの作成日・変更日を保持", isOn: $model.fileDates)
+                    Toggle("ファイルのアクセス権を保持", isOn: $model.filePermissions)
+                    Toggle("フォルダの作成日・変更日を保持", isOn: $model.directoryDates)
+                    Toggle("拡張属性・リソースフォークを保持", isOn: $model.extendedAttributes)
+                }.disabled(model.busy).frame(maxWidth: .infinity, alignment: .leading)
+            }
+            DisclosureGroup("処理内容を表示") {
+                VStack(alignment: .leading, spacing: 6) {
+                    if !model.busy {
+                        Text("次回の実行予定").bold()
+                        if let plan = model.nextPlan {
+                            ForEach(Array(plan.steps.enumerated()), id: \.offset) { _, step in Text(step.text) }
+                        }
+                    }
+                    if let plan = model.snapshot {
+                        Text(model.busy ? "実行中の内容（開始時点）" : "前回の実行内容（開始時点）").bold()
+                        ForEach(Array(plan.steps.enumerated()), id: \.offset) { _, step in Text(step.text) }
+                    }
+                }.textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+            }
+            GroupBox("作業ログ") {
+                VStack(alignment: .leading) {
+                    Toggle("ファイルごとの詳細ログ", isOn: $model.detailedLog).disabled(model.busy)
+                    Text(model.counters.description)
+                    Text("現在の項目: \(model.currentItem)")
+                    if model.omittedLines > 0 { Text("\(model.omittedLines) 行を省略") }
+                    ScrollView {
+                        Text(model.logLines.joined(separator: "\n"))
+                            .font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }.frame(height: 140)
+                    if !model.warnings.isEmpty {
+                        DisclosureGroup("属性警告（全 \(model.warnings.count) 件）") {
+                            Text((model.warnings.prefix(1000).map { "\($0.relativePath): \($0.attribute): \($0.reason)" } + (model.warnings.count > 1000 ? ["ほか \(model.warnings.count - 1000) 件"] : [])).joined(separator: "\n")).textSelection(.enabled)
+                        }
+                    }
+                    Text(model.finalStatus).bold()
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }
             if !model.validation.isEmpty { Text(model.validation).foregroundStyle(.secondary).textSelection(.enabled) }
             if model.busy {
                 if model.total > 0 { ProgressView(value: Double(model.completed), total: Double(model.total)) }
@@ -168,6 +257,7 @@ struct ContentView: View {
                 }
                 Spacer()
             }
-        }.padding(22).frame(minWidth: 700, minHeight: 580)
+        }.padding(22)
+        }.frame(minWidth: 700, minHeight: 580)
     }
 }

@@ -328,3 +328,265 @@ final class MergeEngineTests: XCTestCase {
 private extension Int32 {
     func withClose() -> Int32 { if self < 0 { return -1 }; return close(self) }
 }
+
+extension MergeEngineTests {
+    private var allAttributes: MergeOptions {
+        MergeOptions(fileDates: true, filePermissions: true, directoryDates: true, extendedAttributes: true)
+    }
+    private func measured(_ url: URL) throws -> stat {
+        var info = stat()
+        guard lstat(url.path, &info) == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        return info
+    }
+    private func dates(_ url: URL, birth: Int = 981158400, modified: Int = 1118102400) throws {
+        var times = [timespec(tv_sec: 0, tv_nsec: Int(UTIME_OMIT)), timespec(tv_sec: modified, tv_nsec: 123456789)]
+        XCTAssertEqual(utimensat(AT_FDCWD, url.path, &times, 0), 0)
+        var attrs = attrlist(); attrs.bitmapcount = UInt16(ATTR_BIT_MAP_COUNT); attrs.commonattr = attrgroup_t(ATTR_CMN_CRTIME)
+        var time = timespec(tv_sec: birth, tv_nsec: 987654321)
+        XCTAssertEqual(setattrlist(url.path, &attrs, &time, MemoryLayout<timespec>.size, 0), 0)
+        let actual = try measured(url)
+        XCTAssertEqual(actual.st_birthtimespec.tv_sec, birth)
+        XCTAssertEqual(actual.st_mtimespec.tv_sec, modified)
+    }
+    private func xattr(_ url: URL, _ name: String, _ value: Data) throws {
+        let result = value.withUnsafeBytes { setxattr(url.path, name, $0.baseAddress, value.count, 0, 0) }
+        guard result == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+    }
+    private func xattr(_ url: URL, _ name: String) throws -> Data? {
+        let size = getxattr(url.path, name, nil, 0, 0, 0)
+        if size < 0, errno == ENOATTR { return nil }
+        guard size >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        var value = Data(count: size)
+        let read = value.withUnsafeMutableBytes { getxattr(url.path, name, $0.baseAddress, size, 0, 0) }
+        XCTAssertEqual(read, size)
+        return value
+    }
+    private func execute(_ options: MergeOptions, name: String = UUID().uuidString, inputs: [URL]? = nil) -> MergeResult {
+        MergeEngine().run(MergeRequest(inputs: inputs ?? [a, b], destination: parent, name: name, options: options))
+    }
+    private func assertDates(_ target: URL, _ source: URL, file: StaticString = #filePath, line: UInt = #line) throws {
+        let t = try measured(target), s = try measured(source)
+        XCTAssertEqual(t.st_birthtimespec.tv_sec, s.st_birthtimespec.tv_sec, file: file, line: line)
+        XCTAssertEqual(t.st_birthtimespec.tv_nsec, s.st_birthtimespec.tv_nsec, file: file, line: line)
+        XCTAssertEqual(t.st_mtimespec.tv_sec, s.st_mtimespec.tv_sec, file: file, line: line)
+        XCTAssertEqual(t.st_mtimespec.tv_nsec, s.st_mtimespec.tv_nsec, file: file, line: line)
+    }
+
+    func testIndependentBirthAndModificationDatesOnAndOff() throws {
+        try write(a, "file")
+        let source = a.appendingPathComponent("file")
+        try dates(source)
+        let on = execute(MergeOptions())
+        XCTAssertEqual(on.status, .success)
+        let output = try XCTUnwrap(on.output).appendingPathComponent("file")
+        try assertDates(output, source)
+        let info = try measured(output)
+        print("stat equivalent: birth=\(info.st_birthtimespec.tv_sec).\(info.st_birthtimespec.tv_nsec), mtime=\(info.st_mtimespec.tv_sec).\(info.st_mtimespec.tv_nsec), mode=\(String(info.st_mode & 0o777, radix: 8)); order=mtime then birthtime")
+        let start = Int(Date().timeIntervalSince1970)
+        let off = execute(MergeOptions(fileDates: false))
+        let newInfo = try measured(XCTUnwrap(off.output).appendingPathComponent("file"))
+        XCTAssertGreaterThanOrEqual(newInfo.st_birthtimespec.tv_sec, start)
+        XCTAssertGreaterThanOrEqual(newInfo.st_mtimespec.tv_sec, start)
+    }
+
+    func testPermissionsEnabledAndDisabledIncludingReadonly() throws {
+        let control = parent.appendingPathComponent("control")
+        let fd = open(control.path, O_CREAT | O_EXCL | O_WRONLY, 0o666)
+        XCTAssertGreaterThanOrEqual(fd, 0); close(fd)
+        let defaultMode = try measured(control).st_mode & 0o777
+        for mode in [mode_t(0o640), mode_t(0o400)] {
+            let name = String(mode)
+            try write(a, name)
+            XCTAssertEqual(chmod(a.appendingPathComponent(name).path, mode), 0)
+        }
+        for enabled in [true, false] {
+            let result = execute(MergeOptions(filePermissions: enabled))
+            XCTAssertEqual(result.status, .success)
+            for mode in [mode_t(0o640), mode_t(0o400)] {
+                let output = try XCTUnwrap(result.output).appendingPathComponent(String(mode))
+                XCTAssertEqual(try measured(output).st_mode & 0o777, enabled ? mode : defaultMode)
+            }
+        }
+    }
+
+    func testExtendedAttributesFilesAndDirectoriesEnabledAndDisabled() throws {
+        try write(a, "folder/file")
+        let tags = try PropertyListSerialization.data(fromPropertyList: ["Artificial\n6"], format: .binary, options: 0)
+        var finder = Data(repeating: 0, count: 32); finder[8] = 0x04
+        let attributes: [(String, Data)] = [
+            ("user.foldermerger-test", Data("artificial".utf8)),
+            ("com.apple.metadata:_kMDItemUserTags", tags),
+            ("com.apple.FinderInfo", finder),
+            ("com.apple.ResourceFork", Data("artificial resource fork".utf8)),
+            ("com.apple.quarantine", Data("0081;00000000;ArtificialTest;".utf8))
+        ]
+        var supported: [String: [(String, Data)]] = [:]
+        for relative in ["folder", "folder/file"] {
+            let url = a.appendingPathComponent(relative)
+            for (name, value) in attributes {
+                do {
+                    try xattr(url, name, value)
+                    supported[relative, default: []].append((name, value))
+                    XCTAssertEqual(try xattr(url, name), value)
+                    print("xattr -l equivalent: \(relative) \(name) = \(value.count) bytes")
+                } catch {
+                    // Resource forks on directories are rejected by some macOS filesystems.
+                    if relative == "folder", name == "com.apple.ResourceFork", (error as NSError).code == Int(EPERM) {
+                        print("Directory resource fork fixture unavailable: \(error.localizedDescription)")
+                    } else { throw error }
+                }
+            }
+        }
+        for enabled in [true, false] {
+            let result = execute(MergeOptions(extendedAttributes: enabled))
+            XCTAssertEqual(result.status, .success)
+            for (relative, values) in supported {
+                let target = try XCTUnwrap(result.output).appendingPathComponent(relative)
+                for (name, value) in values {
+                    XCTAssertEqual(try xattr(target, name), enabled ? value : nil, "\(relative): \(name)")
+                }
+            }
+        }
+    }
+
+    func testDirectoryDatesPostorderAndFreshOutputRoot() throws {
+        try write(a, "outer/inner/file")
+        for path in ["outer/inner", "outer", ""] {
+            let url = path.isEmpty ? a! : a.appendingPathComponent(path)
+            try dates(url)
+            try xattr(url, "user.foldermerger-test", Data("folder".utf8))
+        }
+        let probe = parent.appendingPathComponent("root-mode-probe")
+        XCTAssertEqual(mkdir(probe.path, 0o777), 0)
+        let defaultMode = try measured(probe).st_mode & 0o777
+        XCTAssertEqual(chmod(a.path, defaultMode == 0o700 ? 0o755 : 0o700), 0)
+        for enabled in [true, false] {
+            let start = Int(Date().timeIntervalSince1970)
+            let result = execute(MergeOptions(directoryDates: enabled, extendedAttributes: true))
+            let root = try XCTUnwrap(result.output)
+            for path in ["outer", "outer/inner"] {
+                let target = root.appendingPathComponent(path)
+                if enabled { try assertDates(target, a.appendingPathComponent(path)) }
+                else {
+                    let info = try measured(target)
+                    XCTAssertGreaterThanOrEqual(info.st_birthtimespec.tv_sec, start)
+                    XCTAssertGreaterThanOrEqual(info.st_mtimespec.tv_sec, start)
+                }
+            }
+            let info = try measured(root)
+            XCTAssertEqual(info.st_mode & 0o777, defaultMode)
+            XCTAssertGreaterThanOrEqual(info.st_birthtimespec.tv_sec, start)
+            XCTAssertGreaterThanOrEqual(info.st_mtimespec.tv_sec, start)
+            XCTAssertNil(try xattr(root, "user.foldermerger-test"))
+        }
+    }
+
+    func testInputOrderChoosesFileAndDirectoryAttributes() throws {
+        for (index, root) in [a!, b!].enumerated() {
+            try write(root, "folder/file")
+            for path in ["folder/file", "folder"] {
+                let url = root.appendingPathComponent(path)
+                try dates(url, birth: 981158400 + index * 86400, modified: 1118102400 + index * 86400)
+                try xattr(url, "user.order", Data([UInt8(index)]))
+            }
+            XCTAssertEqual(chmod(root.appendingPathComponent("folder/file").path, index == 0 ? 0o640 : 0o400), 0)
+        }
+        for roots in [[a!, b!], [b!, a!]] {
+            let result = execute(allAttributes, inputs: roots)
+            let output = try XCTUnwrap(result.output)
+            for path in ["folder/file", "folder"] {
+                let target = output.appendingPathComponent(path), source = roots[0].appendingPathComponent(path)
+                try assertDates(target, source)
+                XCTAssertEqual(try xattr(target, "user.order"), try xattr(source, "user.order"))
+                if path.hasSuffix("file") { XCTAssertEqual(try measured(target).st_mode & 0o777, try measured(source).st_mode & 0o777) }
+            }
+            XCTAssertEqual(result.counters.copied, 1); XCTAssertEqual(result.counters.skipped, 1)
+        }
+    }
+
+    func testUnsupportedAttributeWarnsAndOtherErrorFailsWithCleanup() throws {
+        try write(a, "file")
+        for code in [ENOTSUP, EACCES] {
+            let engine = MergeEngine()
+            engine.attributeOperation = { _, attribute, operation in attribute == "変更日" ? code : operation() }
+            let result = engine.run(request)
+            if code == ENOTSUP {
+                XCTAssertEqual(result.status, .warnings)
+                XCTAssertEqual(result.counters.warnings, 1)
+                XCTAssertEqual(result.warnings.first?.relativePath, "file")
+                XCTAssertEqual(result.warnings.first?.attribute, "変更日")
+                try fm.removeItem(at: XCTUnwrap(result.output))
+            } else {
+                XCTAssertEqual(result.status, .failure); XCTAssertEqual(result.counters.errors, 1)
+                XCTAssertNil(result.output); XCTAssertTrue(result.error?.message.contains("変更日") == true)
+                XCTAssertFalse(fm.fileExists(atPath: request.output.path))
+            }
+            try assertNoTemporary()
+        }
+    }
+
+    func testDetailedEventsAndCountersRegardlessOfDetail() throws {
+        try write(a, "file"); try write(b, "file")
+        for detailed in [true, false] {
+            let engine = MergeEngine()
+            engine.attributeOperation = { _, name, operation in name == "変更日" ? ENOTSUP : operation() }
+            var events: [MergeEvent] = []
+            let result = engine.run(request, detailedLog: detailed, event: { events.append($0) })
+            XCTAssertEqual(result.counters.copied, 1); XCTAssertEqual(result.counters.skipped, 1)
+            XCTAssertEqual(result.counters.warnings, 1); XCTAssertEqual(result.counters.errors, 0)
+            XCTAssertEqual(events.filter { $0.kind == .copied }.count, detailed ? 1 : 0)
+            XCTAssertEqual(events.filter { $0.kind == .skipped }.count, detailed ? 1 : 0)
+            let warning = try XCTUnwrap(events.first { $0.kind == .warning })
+            XCTAssertEqual(warning.relativePath, "file")
+            XCTAssertEqual(warning.attribute, "変更日"); XCTAssertNotNil(warning.reason)
+            if detailed {
+                let skip = try XCTUnwrap(events.firstIndex { $0.kind == .skipped })
+                let warn = try XCTUnwrap(events.firstIndex { $0.kind == .warning })
+                let copy = try XCTUnwrap(events.firstIndex { $0.kind == .copied })
+                XCTAssertLessThan(skip, copy); XCTAssertLessThan(copy, warn)
+                XCTAssertEqual(events[skip].sourceInput, b)
+                XCTAssertEqual(events[copy].sourceInput, a)
+                XCTAssertEqual(events[copy].bytes, 7)
+                XCTAssertEqual(events[copy].relativePath, "file")
+            }
+            XCTAssertEqual(events.last?.kind, .completed)
+            XCTAssertEqual(events.last?.counters.copied, 1)
+            XCTAssertEqual(events.map(\.timestamp), events.map(\.timestamp).sorted())
+            try fm.removeItem(at: XCTUnwrap(result.output))
+        }
+    }
+
+    func testFailureAndCancellationTerminalEventsAndCleanup() throws {
+        try write(a, "file", Data(repeating: 1, count: 3 * 1_048_576))
+        let token = CancellationToken()
+        var events: [MergeEvent] = []
+        let cancelled = MergeEngine().run(request, cancellation: token, event: { events.append($0) }, progress: {
+            if $0.bytesCopied > 0 { token.cancel() }
+        })
+        XCTAssertEqual(cancelled.status, .cancelled)
+        XCTAssertEqual(events.suffix(2).map(\.kind), [.cancelled, .completed])
+        try assertNoTemporary()
+        XCTAssertFalse(fm.fileExists(atPath: request.output.path))
+        try write(b, "file", Data([2]))
+        events = []
+        let failed = MergeEngine().run(request, event: { events.append($0) })
+        XCTAssertEqual(failed.status, .failure)
+        XCTAssertEqual(events.suffix(2).map(\.kind), [.error, .completed])
+        XCTAssertEqual(failed.counters.errors, 1)
+        try assertNoTemporary()
+    }
+
+    func testPlanIsValueSnapshotAndHasNoExternalCommand() throws {
+        var req = request
+        let snapshot = MergePlanDescription(request: req)
+        req.options = allAttributes
+        req.name = "changed"
+        XCTAssertEqual(snapshot.request.options, MergeOptions())
+        XCTAssertNotEqual(snapshot.request.output, req.output)
+        XCTAssertTrue(snapshot.steps.allSatisfy { $0.arguments == nil && !$0.text.contains("rsync") })
+        XCTAssertTrue(snapshot.steps.contains { $0.text.contains("フォルダの作成日・変更日: 保持しない") })
+        XCTAssertTrue(MergePlanDescription(request: req).steps.contains { $0.text.contains("フォルダの作成日・変更日: 保持") })
+        XCTAssertTrue(snapshot.steps.contains { $0.text.contains("RENAME_EXCL") })
+        XCTAssertTrue(snapshot.steps.contains { $0.text.contains(".DS_Store") })
+    }
+}

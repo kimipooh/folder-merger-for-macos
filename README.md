@@ -46,6 +46,8 @@ Xcode で `FolderMerger.xcodeproj` を開き、FolderMerger スキームで Run 
 
 ## 属性の保持
 
+アプリメニュー「Folder Merger → 設定…」（英語では「Settings…」）、または `⌘,` で設定ウィンドウを開きます。「属性の保持」に4項目、「ログ」に「ファイルごとの詳細ログ」があります。実行中も設定を変更できますが、変更は次回の統合から適用されます。進行中の統合は開始時の属性設定と詳細ログ設定を使い続けます。
+
 | 設定 | 初回既定値 | 説明 |
 | --- | --- | --- |
 | ファイルの作成日・変更日を保持 | オン | Finderに表示されるファイルの「作成日」と「変更日」を引き継ぎます。 |
@@ -58,6 +60,8 @@ Xcode で `FolderMerger.xcodeproj` を開き、FolderMerger スキームで Run 
 Mac 固有情報の初回既定値をオンに変更しました。既存コードでは設定の保存は `didSet` のみで、起動時に初期値を書き込む経路がないことを確認しました。キー `merge.preserveExtendedAttributes` が未保存ならオン、保存済みならオン・オフどちらの値も維持します。読込みは値を保存しません。
 
 ### Attribute settings (English)
+
+Open the Settings window from Folder Merger → Settings… (設定… in Japanese), or press `⌘,`. The four attribute options are under Preserve attributes; Detailed per-file log is under Log. Settings can be changed during a merge and apply to the next merge. The current merge keeps the attribute and log settings captured at its start. Detailed per-file log is not saved and is always off at launch.
 
 | Setting | Initial default | Description |
 | --- | --- | --- |
@@ -92,7 +96,7 @@ App とコアの文言はそれぞれ `Localizable.xcstrings` で管理し、開
 
 「処理内容を表示」は既定で折りたたみです。コアの `MergePlanDescription` が、入力の処理順（属性採用の優先順）、確定先、属性設定、同一ファイル・衝突・除外の規則、一時フォルダと `RENAME_EXCL`、POSIX コピー方式を説明します。外部コマンド引数は `nil` です。実行開始時の説明を値型のスナップショットで保存し、実行後に設定を変えても実行済みの説明は変わりません。次の実行を開始すると更新します。
 
-「作業ログ」は既定で表示し、段階・現在の項目・コピー件数・同一ファイル省略件数・警告とエラーの件数・最終結果を表示します。「ファイルごとの詳細ログ」は起動時オフ、保存せず、実行中は変更不可です。オンでは実際に終えたフォルダ作成・ファイルコピー・比較後の同一ファイル省略を、相対パス、採用元または省略元の入力、コピーのバイト数とともに時系列で表示します。コピー件数は内容のコピー完了時に加算し、以後に属性エラー等で全体が失敗した場合にも実行済み件数として残します。
+「作業ログ」は既定で表示し、段階・現在の項目・コピー件数・同一ファイル省略件数・警告とエラーの件数・最終結果を表示します。設定ウィンドウの「ログ」にある「ファイルごとの詳細ログ」は起動時に常にオフで、保存しません。実行中の変更は次回の統合から適用されます。オンでは実際に終えたフォルダ作成・ファイルコピー・比較後の同一ファイル省略を、相対パス、採用元または省略元の入力、コピーのバイト数とともに時系列で表示します。コピー件数は内容のコピー完了時に加算し、以後に属性エラー等で全体が失敗した場合にも実行済み件数として残します。
 
 警告・エラー・キャンセル・完了は詳細設定にかかわらず通知します。コアの `MergeEvent` と `MergeResult` が件数と「完了／警告ありで完了／失敗／キャンセル」を管理し、既存の `merge` API は URL を返す従来の呼出し用として維持しています。警告を取得する呼出しでは `run` の結果を使います。
 

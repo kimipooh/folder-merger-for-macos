@@ -15,24 +15,18 @@ private func LC(_ key: String, _ count: Int) -> String {
 
 @main
 struct FolderMergerApp: App {
+    @StateObject private var settings = AppSettings()
+
     var body: some Scene {
-        WindowGroup { ContentView() }
+        WindowGroup { ContentView(settings: settings) }
+            .defaultSize(width: 760, height: 700)
             .windowResizability(.contentMinSize)
+        Settings { SettingsView(settings: settings) }
     }
 }
 
 @MainActor
-final class MergeModel: ObservableObject {
-    @Published var inputs: [URL] = []
-    @Published var destination: URL?
-    @Published var name = L("Merged Folder")
-    @Published var validation = L("Select input folders and a destination.")
-    @Published var busy = false
-    @Published var status = ""
-    @Published var errorMessage = ""
-    @Published var output: URL?
-    @Published var completed = 0
-    @Published var total = 0
+final class AppSettings: ObservableObject {
     @Published var fileDates = UserDefaults.standard.object(forKey: "merge.preserveFileDates") as? Bool ?? true {
         didSet { UserDefaults.standard.set(fileDates, forKey: "merge.preserveFileDates") }
     }
@@ -46,6 +40,27 @@ final class MergeModel: ObservableObject {
         didSet { UserDefaults.standard.set(extendedAttributes, forKey: "merge.preserveExtendedAttributes") }
     }
     @Published var detailedLog = false
+    var options: MergeOptions {
+        MergeOptions(fileDates: fileDates, filePermissions: filePermissions, directoryDates: directoryDates, extendedAttributes: extendedAttributes)
+    }
+}
+
+@MainActor
+final class MergeModel: ObservableObject {
+    private let settings: AppSettings
+
+    init(settings: AppSettings) { self.settings = settings }
+
+    @Published var inputs: [URL] = []
+    @Published var destination: URL?
+    @Published var name = L("Merged Folder")
+    @Published var validation = L("Select input folders and a destination.")
+    @Published var busy = false
+    @Published var status = ""
+    @Published var errorMessage = ""
+    @Published var output: URL?
+    @Published var completed = 0
+    @Published var total = 0
     @Published var snapshot: MergePlanDescription?
     @Published var logLines: [String] = []
     @Published var omittedLines = 0
@@ -53,9 +68,6 @@ final class MergeModel: ObservableObject {
     @Published var warnings: [AttributeWarning] = []
     @Published var currentItem = ""
     @Published var finalStatus = ""
-    var options: MergeOptions {
-        MergeOptions(fileDates: fileDates, filePermissions: filePermissions, directoryDates: directoryDates, extendedAttributes: extendedAttributes)
-    }
     var nextPlan: MergePlanDescription? { request.map(MergePlanDescription.init) }
     func appendLogs(_ lines: [String], omitted: Int) {
         logLines.append(contentsOf: lines)
@@ -69,7 +81,7 @@ final class MergeModel: ObservableObject {
     private var cancellation: CancellationToken?
 
     var request: MergeRequest? {
-        destination.map { MergeRequest(inputs: inputs, destination: $0, name: name, options: options) }
+        destination.map { MergeRequest(inputs: inputs, destination: $0, name: name, options: settings.options) }
     }
     func validate(clearOutput: Bool = true) {
         generation += 1
@@ -116,7 +128,7 @@ final class MergeModel: ObservableObject {
         busy = true; errorMessage = ""; output = nil; completed = 0; total = 0; status = L("Preparing…")
         snapshot = MergePlanDescription(request: request)
         logLines = []; omittedLines = 0; counters = MergeCounters(); warnings = []; finalStatus = ""; currentItem = ""
-        let detailed = detailedLog
+        let detailed = settings.detailedLog
         let token = CancellationToken()
         cancellation = token
         DispatchQueue.global(qos: .userInitiated).async {
@@ -161,7 +173,13 @@ final class MergeModel: ObservableObject {
 }
 
 struct ContentView: View {
-    @StateObject private var model = MergeModel()
+    @ObservedObject private var settings: AppSettings
+    @StateObject private var model: MergeModel
+
+    init(settings: AppSettings) {
+        self.settings = settings
+        _model = StateObject(wrappedValue: MergeModel(settings: settings))
+    }
     @State private var dropTarget = false
     var body: some View {
         ScrollView {
@@ -181,7 +199,7 @@ struct ContentView: View {
                                 Button(L("Remove")) { model.inputs.remove(at: index); model.validate() }
                             }
                         }
-                    }.frame(minHeight: 140)
+                    }.frame(height: 140)
                     Button(L("Add Input Folders…"), action: model.chooseInputs)
                 }.padding(6)
             }
@@ -209,33 +227,14 @@ struct ContentView: View {
                 .onChange(of: model.name) { _ in model.validate() }
             Text(L("Output: %@", model.request?.output.path ?? L("Select a destination")))
                 .font(.callout).textSelection(.enabled)
-            GroupBox(L("Preserve attributes")) {
-                VStack(alignment: .leading) {
-                    Toggle(L("Preserve file creation and modification dates"), isOn: $model.fileDates)
-                    Text(L("Keeps the original file dates shown in Finder.")).font(.callout).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.bottom, 8)
-                    Toggle(L("Preserve file permissions"), isOn: $model.filePermissions)
-                    Text(L("Keeps the original read, write, and execute permissions. Leave this on for normal use.")).font(.callout).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.bottom, 8)
-                    Toggle(L("Preserve folder creation and modification dates"), isOn: $model.directoryDates)
-                    Text(L("Turn this on to keep the dates of the folders themselves. When folders at the same relative path are merged, the first one in the input list supplies the dates.")).font(.callout).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.bottom, 8)
-                    Toggle(L("Preserve Finder tags and other Mac metadata"), isOn: $model.extendedAttributes)
-                    Text(L("Keeps Finder tags and additional data used by some Mac files. Leave this on for normal use.")).font(.callout).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.bottom, 8)
-                    DisclosureGroup(L("Details")) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(L("The technical names for Mac metadata are extended attributes and resource forks."))
-                            Text(L("Shooting information (such as EXIF) embedded in Takeout photos and videos, and accompanying JSON files, are copied as file contents regardless of these settings."))
-                            Text(L("If the destination does not support an attribute, the warning shows the affected path and attribute, and the result is “Completed with warnings”."))
-                        }.font(.callout).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }.disabled(model.busy).frame(maxWidth: .infinity, alignment: .leading)
+            HStack {
+                Button(L("Merge"), action: model.start).keyboardShortcut(.defaultAction)
+                    .disabled(model.busy || !model.validation.isEmpty)
+                if model.busy { Button(L("Cancel"), action: model.cancel) }
+                if let output = model.output {
+                    Button(L("Show in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([output]) }
+                }
+                Spacer()
             }
             DisclosureGroup(L("Show Merge Plan")) {
                 VStack(alignment: .leading, spacing: 6) {
@@ -253,7 +252,6 @@ struct ContentView: View {
             }
             GroupBox(L("Activity Log")) {
                 VStack(alignment: .leading) {
-                    Toggle(L("Detailed per-file log"), isOn: $model.detailedLog).disabled(model.busy)
                     Text(model.counters.description)
                     Text(L("Current item: %@", model.currentItem))
                     if model.omittedLines > 0 { Text(LC("Omitted %lld lines", model.omittedLines)) }
@@ -280,16 +278,51 @@ struct ContentView: View {
                 ScrollView { Text(model.errorMessage).foregroundStyle(.red).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
                     .frame(maxHeight: 130)
             }
-            HStack {
-                Button(L("Merge"), action: model.start).keyboardShortcut(.defaultAction)
-                    .disabled(model.busy || !model.validation.isEmpty)
-                if model.busy { Button(L("Cancel"), action: model.cancel) }
-                if let output = model.output {
-                    Button(L("Show in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([output]) }
-                }
-                Spacer()
-            }
         }.padding(22)
         }.frame(minWidth: 700, minHeight: 580)
+    }
+}
+
+struct SettingsView: View {
+    @ObservedObject var settings: AppSettings
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                GroupBox(L("Preserve attributes")) {
+                    VStack(alignment: .leading) {
+                        Toggle(L("Preserve file creation and modification dates"), isOn: $settings.fileDates)
+                        Text(L("Keeps the original file dates shown in Finder.")).font(.callout).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.bottom, 8)
+                        Toggle(L("Preserve file permissions"), isOn: $settings.filePermissions)
+                        Text(L("Keeps the original read, write, and execute permissions. Leave this on for normal use.")).font(.callout).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.bottom, 8)
+                        Toggle(L("Preserve folder creation and modification dates"), isOn: $settings.directoryDates)
+                        Text(L("Turn this on to keep the dates of the folders themselves. When folders at the same relative path are merged, the first one in the input list supplies the dates.")).font(.callout).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.bottom, 8)
+                        Toggle(L("Preserve Finder tags and other Mac metadata"), isOn: $settings.extendedAttributes)
+                        Text(L("Keeps Finder tags and additional data used by some Mac files. Leave this on for normal use.")).font(.callout).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.bottom, 8)
+                        DisclosureGroup(L("Details")) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(L("The technical names for Mac metadata are extended attributes and resource forks."))
+                                Text(L("Shooting information (such as EXIF) embedded in Takeout photos and videos, and accompanying JSON files, are copied as file contents regardless of these settings."))
+                                Text(L("If the destination does not support an attribute, the warning shows the affected path and attribute, and the result is “Completed with warnings”."))
+                            }.font(.callout).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+                GroupBox(L("Log")) {
+                    Toggle(L("Detailed per-file log"), isOn: $settings.detailedLog)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(6)
+                }
+            }.padding(22)
+        }.frame(width: 560, height: 620)
     }
 }

@@ -1098,6 +1098,96 @@
         }
       },
       "generatesSymbol": false
+    },
+    "When different files have the same path": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When different files have the same path"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同じ場所に内容の異なるファイルがある場合"
+          }
+        }
+      },
+      "extractionState": "manual",
+      "generatesSymbol": false
+    },
+    "Stop the merge": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop the merge"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "統合を中止する"
+          }
+        }
+      },
+      "extractionState": "manual",
+      "generatesSymbol": false
+    },
+    "Prefer the earlier folder in the input list": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prefer the earlier folder in the input list"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力一覧で先のフォルダを優先"
+          }
+        }
+      },
+      "extractionState": "manual",
+      "generatesSymbol": false
+    },
+    "Prefer the later folder in the input list": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prefer the later folder in the input list"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力一覧で後のフォルダを優先"
+          }
+        }
+      },
+      "extractionState": "manual",
+      "generatesSymbol": false
+    },
+    "Prefer the file with the newer modification date": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prefer the file with the newer modification date"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更日が新しいファイルを優先"
+          }
+        }
+      },
+      "extractionState": "manual",
+      "generatesSymbol": false
     }
   },
   "version": "1.0"

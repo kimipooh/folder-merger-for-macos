@@ -11,6 +11,22 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
+    func testSamePathPolicyDefaultsAndSavedValues() {
+        withDefaults { defaults in
+            XCTAssertEqual(MergeOptions().samePathPolicy, .stop)
+            XCTAssertEqual(MergePreferences.samePathPolicy(in: defaults), .stop)
+            XCTAssertNil(defaults.object(forKey: "merge.samePathPolicy"))
+            defaults.set("invalid", forKey: "merge.samePathPolicy")
+            XCTAssertEqual(MergePreferences.samePathPolicy(in: defaults), .stop)
+            defaults.set(42, forKey: "merge.samePathPolicy")
+            XCTAssertEqual(MergePreferences.samePathPolicy(in: defaults), .stop)
+            for policy in SamePathPolicy.allCases {
+                defaults.set(policy.rawValue, forKey: "merge.samePathPolicy")
+                XCTAssertEqual(MergePreferences.samePathPolicy(in: defaults), policy)
+            }
+        }
+    }
+
     func testSavedFalseIsPreserved() {
         withDefaults { defaults in
             defaults.set(false, forKey: "merge.preserveExtendedAttributes")

@@ -703,24 +703,6 @@
       },
       "generatesSymbol": false
     },
-    "Inputs remain unchanged and nothing is overwritten. Contents are compared byte by byte; identical files at the same relative path are deduplicated. File and folder attributes come from the first input.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Inputs remain unchanged and nothing is overwritten. Contents are compared byte by byte; identical files at the same relative path are deduplicated. File and folder attributes come from the first input."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "入力不変・非上書き。内容はバイト比較し、同一相対パスの同一ファイルを1件にまとめ、ファイル・フォルダの属性は先頭入力から採用。"
-          }
-        }
-      },
-      "generatesSymbol": false
-    },
     "Merge cancelled.": {
       "extractionState": "manual",
       "localizations": {
@@ -806,24 +788,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "同一ファイルを省略"
-          }
-        }
-      },
-      "generatesSymbol": false
-    },
-    "Stop on different contents, file/folder conflicts, or destination filesystem name collisions. Exclude .DS_Store at every level.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stop on different contents, file/folder conflicts, or destination filesystem name collisions. Exclude .DS_Store at every level."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "内容差・ファイル/フォルダ・保存先 FS の名前衝突は中止。.DS_Store は全階層で除外。"
           }
         }
       },
@@ -1135,24 +1099,6 @@
       },
       "generatesSymbol": false
     },
-    "Input %lld (attribute priority): %@": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Input %lld (attribute priority): %@"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "入力 %lld（属性の優先順）: %@"
-          }
-        }
-      },
-      "generatesSymbol": false
-    },
     " (%lld bytes)": {
       "extractionState": "manual",
       "generatesSymbol": false,
@@ -1206,6 +1152,204 @@
           }
         }
       }
+    },
+    "Stop the merge": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop the merge"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "統合を中止する"
+          }
+        }
+      },
+      "extractionState": "manual",
+      "generatesSymbol": false
+    },
+    "Prefer the earlier folder in the input list": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prefer the earlier folder in the input list"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力一覧で先のフォルダを優先"
+          }
+        }
+      },
+      "extractionState": "manual",
+      "generatesSymbol": false
+    },
+    "Prefer the later folder in the input list": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prefer the later folder in the input list"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力一覧で後のフォルダを優先"
+          }
+        }
+      },
+      "extractionState": "manual",
+      "generatesSymbol": false
+    },
+    "Prefer the file with the newer modification date": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prefer the file with the newer modification date"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更日が新しいファイルを優先"
+          }
+        }
+      },
+      "extractionState": "manual",
+      "generatesSymbol": false
+    },
+    "When different files have the same path": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When different files have the same path"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同じ場所に内容の異なるファイルがある場合"
+          }
+        }
+      },
+      "extractionState": "manual",
+      "generatesSymbol": false
+    },
+    "Modification dates cannot be compared.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modification dates cannot be compared."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更日時を比較できません（比較不可）。"
+          }
+        }
+      },
+      "extractionState": "manual",
+      "generatesSymbol": false
+    },
+    "Modification dates are equal.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modification dates are equal."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更日時が同じです（同時刻）。"
+          }
+        }
+      },
+      "extractionState": "manual",
+      "generatesSymbol": false
+    },
+    "Selected input: %@; rejected input: %@; rule: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selected input: %@; rejected input: %@; rule: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "採用した入力元: %@・採用しなかった入力元: %@・ルール: %@"
+          }
+        }
+      },
+      "extractionState": "manual",
+      "generatesSymbol": false
+    },
+    "Input %lld (priority order): %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input %lld (priority order): %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力 %lld（優先順）: %@"
+          }
+        }
+      },
+      "extractionState": "manual",
+      "generatesSymbol": false
+    },
+    "Inputs remain unchanged and nothing is overwritten. Same-path folders are merged, including canonical Unicode equivalents when the destination treats them as identical. The first spelling and folder attributes are kept. Identical files are deduplicated; file attributes come from the selected file.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inputs remain unchanged and nothing is overwritten. Same-path folders are merged, including canonical Unicode equivalents when the destination treats them as identical. The first spelling and folder attributes are kept. Identical files are deduplicated; file attributes come from the selected file."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力を変更せず、既存項目を上書きしません。同じ相対パスのフォルダは統合します。Unicode の正準等価な名前も保存先が同一視する場合は統合します。表記とフォルダ属性は先の入力を使います。同一内容のファイルは省略し、ファイル属性は採用したファイルから取得します。"
+          }
+        }
+      },
+      "extractionState": "manual",
+      "generatesSymbol": false
+    },
+    "Apply the selected rule only to different file contents. Newer-file priority stops on equal or incomparable modification dates. Stop on file/folder conflicts or other destination name collisions. Exclude .DS_Store at every level.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apply the selected rule only to different file contents. Newer-file priority stops on equal or incomparable modification dates. Stop on file/folder conflicts or other destination name collisions. Exclude .DS_Store at every level."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内容が異なるファイルにだけ選択したルールを適用します。新しい方を優先する場合、変更日時が同じ、または比較不可なら中止します。ファイルとフォルダの衝突やその他の保存先での名前衝突は中止します。.DS_Store は全階層で除外します。"
+          }
+        }
+      },
+      "extractionState": "manual",
+      "generatesSymbol": false
     }
   },
   "version": "1.0"

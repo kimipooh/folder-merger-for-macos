@@ -75,7 +75,7 @@ final class MergeEngineTests: XCTestCase {
         return values
     }
     func assertNoTemporary(file: StaticString = #filePath, line: UInt = #line) throws {
-        XCTAssertFalse(try fm.contentsOfDirectory(atPath: parent.path).contains { $0.contains(".foldermerger-") }, file: file, line: line)
+        XCTAssertFalse(try fm.contentsOfDirectory(atPath: parent.path).contains { $0.contains(".foldermerger-") || $0.hasPrefix(".foldermerger-probe-") }, file: file, line: line)
     }
     func assertFailure(_ req: MergeRequest? = nil, containing: [String] = [], engine: MergeEngine = MergeEngine(),
                        file: StaticString = #filePath, line: UInt = #line) throws {
@@ -103,6 +103,192 @@ final class MergeEngineTests: XCTestCase {
             let outputInfo = try fm.attributesOfItem(atPath: output.appendingPathComponent(path).path)
             XCTAssertEqual(sourceInfo[.modificationDate] as? Date, outputInfo[.modificationDate] as? Date)
         }
+        XCTAssertEqual(try [snapshot(a), snapshot(b)], before)
+        try assertNoTemporary()
+    }
+
+    func testSamePathAlbumNormalizationAndNestedFolders() throws {
+        let c = base.appendingPathComponent("third")
+        try fm.createDirectory(at: c, withIntermediateDirectories: false)
+        let nfc = "アルバム".precomposedStringWithCanonicalMapping
+        let nfd = nfc.decomposedStringWithCanonicalMapping
+        for (i, root) in [a!, b!, c].enumerated() {
+            let name = i == 1 ? nfd : nfc
+            XCTAssertEqual(mkdir(root.path + "/" + name, 0o700), 0)
+            try write(root, name + "/nested/file\(i)", Data("\(i)".utf8))
+        }
+        try write(parent, nfc)
+        var info = stat()
+        let equivalent = lstat(parent.path + "/" + nfd, &info) == 0
+        try fm.removeItem(atPath: parent.path + "/" + nfc)
+        let before = try [a!, b!, c].map(snapshot)
+        let output = try MergeEngine().merge(MergeRequest(inputs: [a, b, c], destination: parent, name: "out"))
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: output.path).count, equivalent ? 1 : 2)
+        for i in 0..<3 {
+            let name = !equivalent && i == 1 ? nfd : nfc
+            XCTAssertEqual(access(output.path + "/" + name + "/nested/file\(i)", F_OK), 0)
+        }
+        XCTAssertEqual(try [a!, b!, c].map(snapshot), before)
+        try assertNoTemporary()
+    }
+
+    func setMtime(_ root: URL, _ path: String, seconds: Int = 1_600_000_000, nanos: Int) throws {
+        var times = [timespec(tv_sec: 0, tv_nsec: Int(UTIME_OMIT)), timespec(tv_sec: seconds, tv_nsec: nanos)]
+        XCTAssertEqual(utimensat(AT_FDCWD, root.path + "/" + path, &times, AT_SYMLINK_NOFOLLOW), 0)
+    }
+
+    func testSamePathPoliciesAndStructuredEventsWithoutDetail() throws {
+        try write(a, "same", Data("first".utf8))
+        try write(b, "same", Data("later".utf8))
+        try setMtime(a, "same", nanos: 10)
+        try setMtime(b, "same", nanos: 20)
+        XCTAssertEqual(chmod(b.path + "/same", 0o640), 0)
+        let before = try [snapshot(a), snapshot(b)]
+        for policy in SamePathPolicy.allCases {
+            var req = request; req.options.samePathPolicy = policy
+            var events: [MergeEvent] = []
+            let result = MergeEngine().run(req, detailedLog: false, event: { events.append($0) })
+            let decisions = events.filter { $0.kind == .fileSelected }
+            if policy == .stop {
+                XCTAssertNil(result.output)
+                XCTAssertTrue(decisions.isEmpty)
+                XCTAssertTrue(result.error!.message.contains(a.path))
+                XCTAssertTrue(result.error!.message.contains(b.path))
+            } else {
+                let output = try XCTUnwrap(result.output)
+                let winner = policy == .earlier ? a! : b!
+                XCTAssertEqual(try Data(contentsOf: output.appendingPathComponent("same")), try Data(contentsOf: winner.appendingPathComponent("same")))
+                let event = try XCTUnwrap(decisions.first)
+                let selection = try XCTUnwrap(event.selection)
+                XCTAssertEqual(decisions.count, 1)
+                XCTAssertEqual(event.relativePath, "same")
+                XCTAssertEqual(selection.selectedInput, winner)
+                XCTAssertEqual(selection.rejectedInput, policy == .earlier ? b! : a!)
+                XCTAssertEqual(selection.policy, policy)
+                XCTAssertTrue(event.line.contains(selection.selectedInput.path))
+                XCTAssertTrue(event.line.contains(selection.rejectedInput.path))
+                XCTAssertTrue(event.line.contains(policy.label))
+                if policy == .newer {
+                    XCTAssertEqual(selection.selectedModificationTime?.nanoseconds, 20)
+                    XCTAssertEqual(selection.rejectedModificationTime?.nanoseconds, 10)
+                }
+                var source = stat(), target = stat()
+                XCTAssertEqual(lstat(winner.path + "/same", &source), 0)
+                XCTAssertEqual(lstat(output.path + "/same", &target), 0)
+                XCTAssertEqual(source.st_mode & 0o777, target.st_mode & 0o777)
+                XCTAssertEqual(source.st_mtimespec.tv_sec, target.st_mtimespec.tv_sec)
+                XCTAssertEqual(source.st_mtimespec.tv_nsec, target.st_mtimespec.tv_nsec)
+                try fm.removeItem(at: output)
+            }
+            XCTAssertEqual(try [snapshot(a), snapshot(b)], before)
+            try assertNoTemporary()
+        }
+    }
+
+    func testNewerPolicyEqualDatesStopsAndCleansUp() throws {
+        try write(a, "same", Data("a".utf8)); try write(b, "same", Data("b".utf8))
+        var req = request; req.options.samePathPolicy = .newer
+        try assertFailure(req, containing: ["same", a.path, b.path, L("Modification dates are equal.")])
+        XCTAssertFalse(fm.fileExists(atPath: req.output.path))
+    }
+
+    func testNewerPolicyIncomparableDatesStopsAndCleansUp() throws {
+        try write(a, "same", Data("a".utf8)); try write(b, "same", Data("b".utf8))
+        let engine = MergeEngine()
+        engine.modificationTime = { _ in FileModificationTime(timespec(tv_sec: 0, tv_nsec: -1)) }
+        var req = request; req.options.samePathPolicy = .newer
+        try assertFailure(req, containing: ["same", a.path, b.path, L("Modification dates cannot be compared.")], engine: engine)
+        XCTAssertFalse(fm.fileExists(atPath: req.output.path))
+    }
+
+    func testThreeInputPolicySelectionWithIdenticalCandidate() throws {
+        let c = base.appendingPathComponent("third")
+        try fm.createDirectory(at: c, withIntermediateDirectories: false)
+        try write(a, "same", Data("a".utf8)); try write(b, "same", Data("b".utf8))
+        try write(c, "same", Data("b".utf8))
+        try setMtime(a, "same", nanos: 10); try setMtime(b, "same", nanos: 30); try setMtime(c, "same", nanos: 20)
+        let before = try [a!, b!, c].map(snapshot)
+        for policy in [SamePathPolicy.earlier, .later, .newer] {
+            let req = MergeRequest(inputs: [a, b, c], destination: parent, name: "out", options: MergeOptions(samePathPolicy: policy))
+            var events: [MergeEvent] = []
+            let result = MergeEngine().run(req, detailedLog: true, event: { events.append($0) })
+            let winner = policy == .earlier ? a! : b!
+            let output = try XCTUnwrap(result.output)
+            XCTAssertEqual(try Data(contentsOf: output.appendingPathComponent("same")), try Data(contentsOf: winner.appendingPathComponent("same")))
+            XCTAssertEqual(events.last { $0.kind == .copied }?.sourceInput, winner)
+            XCTAssertEqual(result.counters.skipped, policy == .earlier ? 0 : 1)
+            try fm.removeItem(at: output)
+        }
+        // A third different candidate must update the currently selected input.
+        try fm.removeItem(at: c.appendingPathComponent("same")); try write(c, "same", Data("c".utf8))
+        try setMtime(c, "same", nanos: 40)
+        for policy in [SamePathPolicy.earlier, .later, .newer] {
+            var events: [MergeEvent] = []
+            let req = MergeRequest(inputs: [a, b, c], destination: parent, name: "out", options: MergeOptions(samePathPolicy: policy))
+            let result = MergeEngine().run(req, event: { events.append($0) })
+            let winner = policy == .earlier ? a! : c
+            XCTAssertEqual(events.filter { $0.kind == .fileSelected }.count, 2)
+            XCTAssertEqual(events.last { $0.kind == .fileSelected }?.selection?.selectedInput, winner)
+            XCTAssertEqual(try Data(contentsOf: result.output!.appendingPathComponent("same")), try Data(contentsOf: winner.appendingPathComponent("same")))
+            try fm.removeItem(at: result.output!)
+        }
+        XCTAssertEqual(try snapshot(a), before[0]); XCTAssertEqual(try snapshot(b), before[1])
+    }
+
+    func testUnicodeFilesFollowPolicyAndKeepFirstSpelling() throws {
+        let first = "アルバム".precomposedStringWithCanonicalMapping
+        let second = first.decomposedStringWithCanonicalMapping
+        try write(a, first, Data("first".utf8)); try write(b, second, Data("last".utf8))
+        // Measure using raw POSIX paths, since URL can normalize spelling.
+        try write(parent, first)
+        var info = stat()
+        let equivalent = lstat(parent.path + "/" + second, &info) == 0
+        try fm.removeItem(atPath: parent.path + "/" + first)
+        for policy in SamePathPolicy.allCases {
+            var req = request; req.options.samePathPolicy = policy
+            try setMtime(b, second, nanos: 987654321)
+            var events: [MergeEvent] = []
+            let result = MergeEngine().run(req, event: { events.append($0) })
+            if equivalent && policy == .stop { XCTAssertNil(result.output); continue }
+            let out = try XCTUnwrap(result.output)
+            let names = try fm.contentsOfDirectory(atPath: out.path)
+            XCTAssertEqual(names.count, equivalent ? 1 : 2)
+            if equivalent {
+                XCTAssertEqual(Data(names[0].utf8), Data(first.utf8))
+                XCTAssertEqual(try Data(contentsOf: out.appendingPathComponent(first)), Data((policy == .earlier ? "first" : "last").utf8))
+                XCTAssertEqual(events.filter { $0.kind == .fileSelected }.count, 1)
+            }
+            try fm.removeItem(at: out)
+        }
+        try assertNoTemporary()
+    }
+
+    func testNestedUnicodePathsKeepEarlierDecomposedSpellingAndFolderAttributes() throws {
+        let nfc = "アルバム".precomposedStringWithCanonicalMapping
+        let nfd = nfc.decomposedStringWithCanonicalMapping
+        XCTAssertEqual(mkdir(a.path + "/" + nfd, 0o700), 0)
+        XCTAssertEqual(mkdir(b.path + "/" + nfc, 0o700), 0)
+        try write(a, nfd + "/" + nfd, Data("a".utf8))
+        try write(b, nfc + "/" + nfc, Data("b".utf8))
+        try xattr(a.appendingPathComponent(nfd), "user.foldermerger-test", Data("first-folder".utf8))
+        try xattr(b.appendingPathComponent(nfc), "user.foldermerger-test", Data("later-folder".utf8))
+        try xattr(b.appendingPathComponent(nfc).appendingPathComponent(nfc), "user.foldermerger-test", Data("selected-file".utf8))
+        try setMtime(a, nfd, nanos: 11); try setMtime(b, nfc, nanos: 22)
+        let before = try [snapshot(a), snapshot(b)]
+        let req = MergeRequest(inputs: [a, b], destination: parent, name: "out", options: MergeOptions(directoryDates: true, samePathPolicy: .later))
+        let output = try MergeEngine().merge(req)
+        let folders = try fm.contentsOfDirectory(atPath: output.path)
+        if folders.count == 1 {
+            XCTAssertEqual(Data(folders[0].utf8), Data(nfd.utf8))
+            let children = try fm.contentsOfDirectory(atPath: output.path + "/" + nfd)
+            XCTAssertEqual(Data(children[0].utf8), Data(nfd.utf8))
+            XCTAssertEqual(try Data(contentsOf: output.appendingPathComponent(nfd).appendingPathComponent(nfd)), Data("b".utf8))
+            XCTAssertEqual(try xattr(output.appendingPathComponent(nfd), "user.foldermerger-test"), Data("first-folder".utf8))
+            XCTAssertEqual(try xattr(output.appendingPathComponent(nfd).appendingPathComponent(nfd), "user.foldermerger-test"), Data("selected-file".utf8))
+            var info = stat()
+            XCTAssertEqual(lstat(output.path + "/" + nfd, &info), 0)
+            XCTAssertEqual(info.st_mtimespec.tv_nsec, 11)
+        } else { XCTAssertEqual(folders.count, 2) }
         XCTAssertEqual(try [snapshot(a), snapshot(b)], before)
         try assertNoTemporary()
     }
@@ -190,7 +376,12 @@ final class MergeEngineTests: XCTestCase {
         let equivalent = lstat(parent.appendingPathComponent(nfd).path, &info) == 0
         try fm.removeItem(at: parent.appendingPathComponent(nfc))
         print("FS measurement: NFC/NFD-equivalent=\(equivalent)")
-        if equivalent { try assertFailure(containing: [nfc, nfd, a.path, b.path]) }
+        if equivalent {
+            let result = MergeEngine().run(request)
+            XCTAssertNotNil(result.output)
+            XCTAssertEqual(result.counters.skipped, 1)
+            XCTAssertEqual(try fm.contentsOfDirectory(atPath: result.output!.path).count, 1)
+        }
         else {
             let output = try MergeEngine().merge(request)
             XCTAssertEqual(try fm.contentsOfDirectory(atPath: output.path).count, 2)
@@ -580,9 +771,12 @@ extension MergeEngineTests {
         var req = request
         let snapshot = MergePlanDescription(request: req)
         req.options = allAttributes
+        req.options.samePathPolicy = .later
         req.name = "changed"
         XCTAssertEqual(snapshot.request.options, MergeOptions())
         XCTAssertNotEqual(snapshot.request.output, req.output)
+        XCTAssertTrue(snapshot.steps.contains { $0.text == L("%@: %@", L("When different files have the same path"), SamePathPolicy.stop.label) })
+        XCTAssertTrue(MergePlanDescription(request: req).steps.contains { $0.text == L("%@: %@", L("When different files have the same path"), SamePathPolicy.later.label) })
         XCTAssertTrue(snapshot.steps.allSatisfy { $0.arguments == nil && !$0.text.contains("rsync") })
         XCTAssertTrue(snapshot.steps.contains { $0.text == L("%@: %@", L("Folder creation and modification dates"), L("Do not preserve")) })
         XCTAssertTrue(MergePlanDescription(request: req).steps.contains { $0.text == L("%@: %@", L("Folder creation and modification dates"), L("Preserve")) })

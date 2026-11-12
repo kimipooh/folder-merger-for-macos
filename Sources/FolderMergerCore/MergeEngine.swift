@@ -47,7 +47,7 @@ private struct Identity: Hashable {
 }
 
 private struct Entry {
-    let relative: String
+    var relative: String
     let source: String
     let root: URL
     let info: stat
@@ -60,6 +60,8 @@ public final class MergeEngine {
     var beforeCommit: (() throws -> Void)?
     // A narrow, injectable attribute syscall boundary. Return errno, or zero on success.
     var attributeOperation: (String, String, () -> Int32) -> Int32 = { _, _, operation in operation() }
+    // Timestamp boundary allows testing incomparable metadata without corrupting fixtures.
+    var modificationTime: (stat) -> FileModificationTime = { FileModificationTime($0.st_mtimespec) }
     public init() {}
 
     public static func validName(_ name: String) -> Bool {
@@ -136,6 +138,32 @@ public final class MergeEngine {
         }
     }
 
+    private static func normalizationInsensitive(at destination: URL, name: String) throws -> Bool {
+        let probe = destination.appendingPathComponent(".foldermerger-probe-\(UUID().uuidString)")
+        guard mkdir(probe.path, 0o700) == 0 else { throw systemError("Cannot create the temporary folder", probe) }
+        func measure() throws -> Bool {
+            let fd = open(probe.path + "/" + name.precomposedStringWithCanonicalMapping,
+                          O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW, 0o600)
+            guard fd >= 0 else { throw systemError("Cannot create the temporary folder", probe) }
+            defer { close(fd) }
+            var original = stat(), alternate = stat()
+            guard fstat(fd, &original) == 0 else { throw systemError("Cannot inspect the item", probe) }
+            if lstat(probe.path + "/" + name, &alternate) == 0 { return Identity(original) == Identity(alternate) }
+            let code = errno
+            guard code == ENOENT else { throw systemError("Cannot inspect the item", probe, code: code) }
+            return false
+        }
+        let result: Bool
+        do { result = try measure() }
+        catch {
+            do { try FileManager.default.removeItem(at: probe) }
+            catch let cleanup { throw MergeError(L("%@\nTemporary folder cleanup also failed: %@\n%@", error.localizedDescription, probe.path, cleanup.localizedDescription)) }
+            throw error
+        }
+        try FileManager.default.removeItem(at: probe)
+        return result
+    }
+
     public func merge(_ request: MergeRequest, cancellation: CancellationToken = CancellationToken(),
                       progress: (MergeProgress) -> Void = { _ in }) throws -> URL {
         let result = run(request, cancellation: cancellation, progress: progress)
@@ -169,7 +197,24 @@ public final class MergeEngine {
         try Self.validate(request)
         try cancellation.check()
         var plan: [Entry] = []
-        // Swift String equality normalizes Unicode. Raw UTF-8 keys are essential here.
+        // Probe the destination itself; never infer its behavior from Swift equality.
+        var normalizationResults: [Data: Bool] = [:]
+        func pathKey(_ path: String) throws -> Data {
+            let components = try path.split(separator: "/").map { component -> String in
+                let raw = String(component)
+                let canonical = raw.precomposedStringWithCanonicalMapping
+                let bytes = Data(raw.utf8)
+                if bytes == Data(canonical.utf8) { return raw }
+                let equivalent: Bool
+                if let cached = normalizationResults[bytes] { equivalent = cached }
+                else {
+                    equivalent = try Self.normalizationInsensitive(at: request.destination, name: raw)
+                    normalizationResults[bytes] = equivalent
+                }
+                return equivalent ? canonical : raw
+            }
+            return Data(components.joined(separator: "/").utf8)
+        }
         var paths: [Data: Int] = [:]
         var bytes: Int64 = 0
         var scanned = 0
@@ -210,19 +255,44 @@ public final class MergeEngine {
                 guard kind == S_IFDIR || kind == S_IFREG else {
                     throw MergeError(L("Symbolic link or unsupported special file:\nRelative path: %@\nInput: %@\n%@", relative, root.path, url))
                 }
-                let entry = Entry(relative: relative, source: url, root: root, info: value)
-                let key = Data(relative.utf8)
+                var entry = Entry(relative: relative, source: url, root: root, info: value)
+                let key = try pathKey(relative)
                 if let index = paths[key] {
                     let previous = plan[index]
                     guard previous.directory == entry.directory else { throw conflict(previous, entry) }
                     if !entry.directory {
-                        guard previous.info.st_size == value.st_size else { throw conflict(previous, entry) }
-                        let equal = try equalFiles(previous.source, url, cancellation: cancellation) {
+                        let equal = try previous.info.st_size == value.st_size && equalFiles(previous.source, url, cancellation: cancellation) {
                             report(L("Comparing contents"), scanned, 0)
                         }
-                        guard equal else { throw conflict(previous, entry) }
-                        context.counters.skipped += 1
-                        context.detail(.skipped, entry: entry, bytes: Int64(value.st_size), message: L("Skipped identical file"))
+                        if equal {
+                            context.counters.skipped += 1
+                            context.detail(.skipped, entry: entry, bytes: Int64(value.st_size), message: L("Skipped identical file"))
+                        } else {
+                            let policy = request.options.samePathPolicy
+                            var useNext = false
+                            switch policy {
+                            case .stop: throw conflict(previous, entry)
+                            case .earlier: break
+                            case .later: useNext = true
+                            case .newer:
+                                let left = modificationTime(previous.info)
+                                let right = modificationTime(entry.info)
+                                guard left.isValid && right.isValid else {
+                                    throw MergeError(conflict(previous, entry).message + "\n" + L("Modification dates cannot be compared."))
+                                }
+                                guard left != right else {
+                                    throw MergeError(conflict(previous, entry).message + "\n" + L("Modification dates are equal."))
+                                }
+                                useNext = left < right
+                            }
+                            let selected = useNext ? entry : previous
+                            let rejected = useNext ? previous : entry
+                            context.decision(selected: selected, rejected: rejected, policy: policy)
+                            if useNext {
+                                entry.relative = previous.relative
+                                plan[index] = entry
+                            }
+                        }
                     }
                 } else {
                     paths[key] = plan.count
@@ -230,7 +300,7 @@ public final class MergeEngine {
                 }
                 scanned += 1
                 report(L("Scanning inputs"), scanned, 0)
-                if entry.directory { try scan(url, root: root, prefix: relative) }
+                if entry.directory { try scan(url, root: root, prefix: plan[paths[key]!].relative) }
             }
         }
         for input in request.inputs { try scan(input.path, root: input, prefix: "") }
@@ -422,19 +492,53 @@ public final class MergeEngine {
     }
 }
 
+public enum SamePathPolicy: String, Sendable, CaseIterable {
+    case stop, earlier, later, newer
+    public var localizationKey: String {
+        switch self {
+        case .stop: return "Stop the merge"
+        case .earlier: return "Prefer the earlier folder in the input list"
+        case .later: return "Prefer the later folder in the input list"
+        case .newer: return "Prefer the file with the newer modification date"
+        }
+    }
+    public var label: String { L(localizationKey) }
+}
+
+// Keep the exact stat timestamp rather than rounding through Date/Double.
+public struct FileModificationTime: Sendable, Equatable, Comparable {
+    public let seconds: Int
+    public let nanoseconds: Int
+    init(_ value: timespec) { seconds = value.tv_sec; nanoseconds = value.tv_nsec }
+    var isValid: Bool { (0..<1_000_000_000).contains(nanoseconds) }
+    public static func < (lhs: Self, rhs: Self) -> Bool {
+        lhs.seconds == rhs.seconds ? lhs.nanoseconds < rhs.nanoseconds : lhs.seconds < rhs.seconds
+    }
+}
+
+public struct FileSelection: Sendable {
+    public let selectedInput: URL
+    public let rejectedInput: URL
+    public let policy: SamePathPolicy
+    public let selectedModificationTime: FileModificationTime?
+    public let rejectedModificationTime: FileModificationTime?
+}
+
 public struct MergeOptions: Sendable, Equatable {
+    public var samePathPolicy: SamePathPolicy
     public var fileDates: Bool
     public var filePermissions: Bool
     public var directoryDates: Bool
     public var extendedAttributes: Bool
-    public init(fileDates: Bool = true, filePermissions: Bool = true, directoryDates: Bool = false, extendedAttributes: Bool = true) {
+    public init(fileDates: Bool = true, filePermissions: Bool = true, directoryDates: Bool = false, extendedAttributes: Bool = true, samePathPolicy: SamePathPolicy = .stop) {
+        self.samePathPolicy = samePathPolicy
         self.fileDates = fileDates; self.filePermissions = filePermissions
         self.directoryDates = directoryDates; self.extendedAttributes = extendedAttributes
     }
     public var descriptions: [String] {
         [(L("File creation and modification dates"), fileDates), (L("File permissions"), filePermissions),
          (L("Folder creation and modification dates"), directoryDates), (L("Extended attributes and resource forks"), extendedAttributes)]
-            .map { L("%@: %@", $0.0, $0.1 ? L("Preserve") : L("Do not preserve")) }
+            .map { L("%@: %@", $0.0, $0.1 ? L("Preserve") : L("Do not preserve")) } + [L("%@: %@", L("When different files have the same path"), samePathPolicy.label)]
     }
 }
 
@@ -466,7 +570,7 @@ public struct MergeResult {
     public let error: MergeError?
 }
 public struct MergeEvent: Sendable {
-    public enum Kind: Sendable { case phase, directoryCreated, copied, skipped, warning, error, cancelled, completed }
+    public enum Kind: Sendable { case fileSelected, phase, directoryCreated, copied, skipped, warning, error, cancelled, completed }
     public let timestamp: Date
     public let kind: Kind
     public let relativePath: String?
@@ -476,6 +580,7 @@ public struct MergeEvent: Sendable {
     public let reason: String?
     public let message: String
     public let counters: MergeCounters
+    public let selection: FileSelection?
     public var line: String {
         L("%@ %@%@%@%@", timestamp.formatted(date: .omitted, time: .standard), message,
           relativePath.map { L(" %@", $0) } ?? "",
@@ -490,7 +595,16 @@ private final class EventContext {
     var warnings: [AttributeWarning] = []
     init(detailed: Bool, sink: @escaping (MergeEvent) -> Void) { self.detailed = detailed; self.sink = sink }
     func emit(_ kind: MergeEvent.Kind, relative: String? = nil, source: URL? = nil, bytes: Int64? = nil, attribute: String? = nil, reason: String? = nil, message: String) {
-        sink(MergeEvent(timestamp: Date(), kind: kind, relativePath: relative, sourceInput: source, bytes: bytes, attribute: attribute, reason: reason, message: message, counters: counters))
+        sink(MergeEvent(timestamp: Date(), kind: kind, relativePath: relative, sourceInput: source, bytes: bytes, attribute: attribute, reason: reason, message: message, counters: counters, selection: nil))
+    }
+    func decision(selected: Entry, rejected: Entry, policy: SamePathPolicy) {
+        let selection = FileSelection(selectedInput: selected.root, rejectedInput: rejected.root, policy: policy,
+                                      selectedModificationTime: policy == .newer ? FileModificationTime(selected.info.st_mtimespec) : nil,
+                                      rejectedModificationTime: policy == .newer ? FileModificationTime(rejected.info.st_mtimespec) : nil)
+        sink(MergeEvent(timestamp: Date(), kind: .fileSelected, relativePath: selected.relative,
+                        sourceInput: selected.root, bytes: Int64(selected.info.st_size), attribute: nil, reason: nil,
+                        message: L("Selected input: %@; rejected input: %@; rule: %@", selected.root.path, rejected.root.path, policy.label),
+                        counters: counters, selection: selection))
     }
     func detail(_ kind: MergeEvent.Kind, entry: Entry, bytes: Int64? = nil, message: String) {
         if detailed { emit(kind, relative: entry.relative, source: entry.root, bytes: bytes, message: message) }
@@ -505,10 +619,10 @@ public struct MergePlanDescription: Sendable {
     public let steps: [ExecutionStep]
     public init(request: MergeRequest) {
         self.request = request
-        let lines = request.inputs.enumerated().map { L("Input %lld (attribute priority): %@", $0.offset + 1, $0.element.path) }
+        let lines = request.inputs.enumerated().map { L("Input %lld (priority order): %@", $0.offset + 1, $0.element.path) }
             + [L("Final destination: %@", request.output.path)] + request.options.descriptions + [
-                L("Inputs remain unchanged and nothing is overwritten. Contents are compared byte by byte; identical files at the same relative path are deduplicated. File and folder attributes come from the first input."),
-                L("Stop on different contents, file/folder conflicts, or destination filesystem name collisions. Exclude .DS_Store at every level."),
+                L("Inputs remain unchanged and nothing is overwritten. Same-path folders are merged, including canonical Unicode equivalents when the destination treats them as identical. The first spelling and folder attributes are kept. Identical files are deduplicated; file attributes come from the selected file."),
+                L("Apply the selected rule only to different file contents. Newer-file priority stops on equal or incomparable modification dates. Stop on file/folder conflicts or other destination name collisions. Exclude .DS_Store at every level."),
                 L("Copy method: POSIX open/read/write (1 MiB chunks). No external commands."),
                 L("Create exclusively in a temporary folder on the same volume. Apply selected attributes only: contents → extended attributes → file permissions → modification date → creation date. Apply folder attributes after their children, deepest first. The output root is newly created."),
                 L("Finalize with RENAME_EXCL only on success. Clean up the temporary folder on failure or cancellation. Unsupported attributes produce warnings; other errors stop the merge.")

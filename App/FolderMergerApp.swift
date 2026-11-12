@@ -80,9 +80,12 @@ final class AppSettings: ObservableObject {
     @Published var extendedAttributes = MergePreferences.preserveExtendedAttributes(in: .standard) {
         didSet { UserDefaults.standard.set(extendedAttributes, forKey: "merge.preserveExtendedAttributes") }
     }
+    @Published var samePathPolicy = MergePreferences.samePathPolicy(in: .standard) {
+        didSet { UserDefaults.standard.set(samePathPolicy.rawValue, forKey: "merge.samePathPolicy") }
+    }
     @Published var detailedLog = false
     var options: MergeOptions {
-        MergeOptions(fileDates: fileDates, filePermissions: filePermissions, directoryDates: directoryDates, extendedAttributes: extendedAttributes)
+        MergeOptions(fileDates: fileDates, filePermissions: filePermissions, directoryDates: directoryDates, extendedAttributes: extendedAttributes, samePathPolicy: samePathPolicy)
     }
 }
 
@@ -357,6 +360,13 @@ struct SettingsView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+                GroupBox(L("When different files have the same path")) {
+                    Picker(L("When different files have the same path"), selection: $settings.samePathPolicy) {
+                        ForEach(SamePathPolicy.allCases, id: \.self) { policy in
+                            Text(L(policy.localizationKey)).tag(policy)
+                        }
+                    }.labelsHidden().frame(maxWidth: .infinity, alignment: .leading).padding(6)
                 }
                 GroupBox(L("Log")) {
                     Toggle(L("Detailed per-file log"), isOn: $settings.detailedLog)

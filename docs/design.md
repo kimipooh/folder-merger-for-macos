@@ -1,6 +1,6 @@
 # 設計と実装
 
-[README](../README.md) · [日本語マニュアル](user-guide-ja.md) · [English guide](user-guide-en.md) · [配布計画](release.md)
+[README](../README-ja.md) · [日本語マニュアル](user-guide-ja.md) · [English guide](user-guide-en.md) · [配布計画](release.md)
 
 ## 構成と不変条件
 
@@ -87,7 +87,7 @@ Package.swift に外部依存はなく、xcodeproj はローカルの FolderMerg
 
 ## ビルド・テスト
 
-[README の手順](../README.md)を使用する。テストは一時領域へ作る人工データのみを使用する。日時、権限、xattr、入力順、警告とエラー、確定競合、キャンセル、説明スナップショット、設定既定値、日英リソースと全キー・引数・複数形を検証する。
+[README の手順](../README-ja.md)を使用する。テストは一時領域へ作る人工データのみを使用する。日時、権限、xattr、入力順、警告とエラー、確定競合、キャンセル、説明スナップショット、設定既定値、日英リソースと全キー・引数・複数形を検証する。
 
 ## 過去の検証記録（移設）
 

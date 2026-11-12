@@ -1,6 +1,6 @@
 # ソース公開とバイナリ配布
 
-[README](../README.md) · [設計](design.md) · [日本語マニュアル](user-guide-ja.md) · [English guide](user-guide-en.md) · [MIT License](../LICENSE)
+[README](../README-ja.md) · [設計](design.md) · [日本語マニュアル](user-guide-ja.md) · [English guide](user-guide-en.md) · [MIT License](../LICENSE)
 
 ## 現行方針
 
@@ -53,7 +53,7 @@ open "$release_verify/Folder Merger.app"
 ## 公開前チェックリスト
 
 - [ ] 差分・履歴・未追跡ファイルに内部資料・実データ・秘匿情報がない。
-- [ ] README、日英マニュアル、設計、LICENSE、内部リンクとカタログの UI 文言が一致する。
+- [ ] 英日 README、日英マニュアル、設計、LICENSE、内部リンクとカタログの UI 文言が一致する。
 - [ ] テスト、ビルド、空白、BOM、日英画面と標準メニューの結果を記録した。
 - [ ] タグと ZIP が同じコミットで、MARKETING_VERSION とタグが同版である。
 - [ ] ZIP 展開後の内容・起動・設定保持・人工データ統合を確認した。

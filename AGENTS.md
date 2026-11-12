@@ -9,7 +9,7 @@
 
 ## 文字列と文書
 
-UI の独自文字列は `App/Localizable.xcstrings`、エンジンの文字列は `Sources/FolderMergerCore/Resources/Localizable.xcstrings` で管理する。英語と日本語の全キー、書式引数、複数形を揃える。コアは Bundle.module から読み込む。SwiftUI の標準 Settings メニューはこのカタログに含まれない。
+UI の独自文字列は `macos/App/Localizable.xcstrings`、エンジンの文字列は `macos/Sources/FolderMergerCore/Resources/Localizable.xcstrings` で管理する。英語と日本語の全キー、書式引数、複数形を揃える。コアは Bundle.module から読み込む。SwiftUI の標準 Settings メニューはこのカタログに含まれない。
 
 仕様や操作を変える場合、[README](README.md)、[日本語 README](README-ja.md)、[日本語マニュアル](docs/user-guide-ja.md)、[英語マニュアル](docs/user-guide-en.md)、[設計](docs/design.md)を同時に点検・更新する。UI 名称・既定値・保存挙動をコードとカタログへ照合する。未実装機能を実装済みと書かない。
 
@@ -20,8 +20,8 @@ UI の独自文字列は `App/Localizable.xcstrings`、エンジンの文字列�
 macOS と Xcode のある環境で、リポジトリルートから実行する。
 
 ```sh
-swift test --scratch-path "$TMPDIR/fm-build"
-xcodebuild -project FolderMerger.xcodeproj -scheme FolderMerger \
+swift test --package-path macos --scratch-path "$TMPDIR/fm-build"
+xcodebuild -project macos/FolderMerger.xcodeproj -scheme FolderMerger \
   -configuration Debug -derivedDataPath "$TMPDIR/fm-dd" build
 git diff --check
 ```

@@ -4,13 +4,13 @@
 
 ## 構成と不変条件
 
-`App/FolderMergerApp.swift` は SwiftUI の WindowGroup と Settings シーンを提供する。AppSettings は設定の読込み・保存、MergeModel は入力一覧・構成検証・開始時スナップショット・バックグラウンド実行・進捗バッファ・結果表示を担当する。Foundation/AppKit の選択パネルと Finder 表示を使用する。
+`macos/App/FolderMergerApp.swift` は SwiftUI の WindowGroup と Settings シーンを提供する。AppSettings は設定の読込み・保存、MergeModel は入力一覧・構成検証・開始時スナップショット・バックグラウンド実行・進捗バッファ・結果表示を担当する。Foundation/AppKit の選択パネルと Finder 表示を使用する。
 
-`Sources/FolderMergerCore/MergeEngine.swift` は UI に依存しない Swift Package の統合エンジンで、検証、走査、比較、コピー、属性適用、確定、後片付けを行う。`run` は MergeResult（状態・出力 URL・件数・警告・エラー）を返し、MergeEvent と MergeProgress で通知する。従来の `merge` は URL を返す互換 API で、警告を取得する場合は `run` を使用する。
+`macos/Sources/FolderMergerCore/MergeEngine.swift` は UI に依存しない Swift Package の統合エンジンで、検証、走査、比較、コピー、属性適用、確定、後片付けを行う。`run` は MergeResult（状態・出力 URL・件数・警告・エラー）を返し、MergeEvent と MergeProgress で通知する。従来の `merge` は URL を返す互換 API で、警告を取得する場合は `run` を使用する。
 
 不変条件は「入力を変更しない」「既存の出力先を上書きしない」。入力を移動・改名・削除せず、内容と更新日時を変更しない。ただし読取りによるアクセス日時の更新は抑制しない。入力全体の時点スナップショットは作成しないため、実行中は他のアプリでも入力・保存先を変更しないこと。
 
-対応は macOS 13.0 以降（Package.swift と Xcode deployment target）。App Sandbox は無効、現在は CODE_SIGNING_ALLOWED=NO。ユーザー権限で動き、macOS のプライバシー保護によるアクセス許可が別途必要になりうる。バンドル ID は仮の `org.foldermerger.local`、表示バージョン 1.0、ビルド番号 1。外部依存、Sparkle、自動更新はない。手動の更新確認メニューを About の直後に追加し、Settings は維持する。
+対応は macOS 13.0 以降（macos/Package.swift と Xcode deployment target）。App Sandbox は無効、現在は CODE_SIGNING_ALLOWED=NO。ユーザー権限で動き、macOS のプライバシー保護によるアクセス許可が別途必要になりうる。バンドル ID は仮の `org.foldermerger.local`、表示バージョン 1.0、ビルド番号 1。外部依存、Sparkle、自動更新はない。手動の更新確認メニューを About の直後に追加し、Settings は維持する。
 
 ## 手動の更新確認
 
@@ -81,9 +81,9 @@ start 時に値型の MergeRequest（MergeOptions を含む）と detailedLog �
 
 ## ローカライズと依存関係
 
-App/Localizable.xcstrings と Sources/FolderMergerCore/Resources/Localizable.xcstrings が日英の正本。開発言語は英語、コアは Swift Package の Bundle.module を使用する。macOS のシステム／アプリ別言語に従い、非対応言語は英語へフォールバックする。パスは翻訳しない。設定メニューは SwiftUI Settings シーンが提供し、カタログ内の独自文字列ではない。
+macos/App/Localizable.xcstrings と macos/Sources/FolderMergerCore/Resources/Localizable.xcstrings が日英の正本。開発言語は英語、コアは Swift Package の Bundle.module を使用する。macOS のシステム／アプリ別言語に従い、非対応言語は英語へフォールバックする。パスは翻訳しない。設定メニューは SwiftUI Settings シーンが提供し、カタログ内の独自文字列ではない。
 
-Package.swift に外部依存はなく、xcodeproj はローカルの FolderMergerCore のみ参照する。リソースは日英カタログのみで、第三者コード・素材の同梱は確認されない。Apple のシステムフレームワークを利用する。Sparkle は未導入。現行配布は Developer ID 署名・Apple 公証なしの ZIP と手動入れ替え。
+macos/Package.swift に外部依存はなく、xcodeproj はローカルの FolderMergerCore のみ参照する。リソースは日英カタログのみで、第三者コード・素材の同梱は確認されない。Apple のシステムフレームワークを利用する。Sparkle は未導入。現行配布は Developer ID 署名・Apple 公証なしの ZIP と手動入れ替え。
 
 ## ビルド・テスト
 

@@ -26,13 +26,13 @@ No Release is available yet. For now, build from source. Once a Release is publi
 Run from the repository root. Build products stay in temporary storage:
 
 ```sh
-swift test --scratch-path "$TMPDIR/fm-build"
-xcodebuild -project FolderMerger.xcodeproj -scheme FolderMerger \
+swift test --package-path macos --scratch-path "$TMPDIR/fm-build"
+xcodebuild -project macos/FolderMerger.xcodeproj -scheme FolderMerger \
   -configuration Debug -derivedDataPath "$TMPDIR/fm-dd" build
 open "$TMPDIR/fm-dd/Build/Products/Debug/Folder Merger.app"
 ```
 
-Alternatively, open `FolderMerger.xcodeproj` in Xcode and run the FolderMerger scheme. For first-launch instructions if Gatekeeper blocks the app, see the [user guide](docs/user-guide-en.md#availability-first-launch-and-manual-updates).
+Alternatively, open `macos/FolderMerger.xcodeproj` in Xcode and run the FolderMerger scheme. For first-launch instructions if Gatekeeper blocks the app, see the [user guide](docs/user-guide-en.md#availability-first-launch-and-manual-updates).
 
 ## Usage
 

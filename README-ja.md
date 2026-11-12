@@ -26,13 +26,13 @@ Release はまだ公開されていません。現時点ではソースからビ
 リポジトリのルートで実行します。生成物は一時領域に置きます。
 
 ```sh
-swift test --scratch-path "$TMPDIR/fm-build"
-xcodebuild -project FolderMerger.xcodeproj -scheme FolderMerger \
+swift test --package-path macos --scratch-path "$TMPDIR/fm-build"
+xcodebuild -project macos/FolderMerger.xcodeproj -scheme FolderMerger \
   -configuration Debug -derivedDataPath "$TMPDIR/fm-dd" build
 open "$TMPDIR/fm-dd/Build/Products/Debug/Folder Merger.app"
 ```
 
-Xcode で `FolderMerger.xcodeproj` を開き、FolderMerger スキームで Run することもできます。初回起動時に Gatekeeper がブロックした場合は[マニュアル](docs/user-guide-ja.md#入手起動と手動アップデート)を参照してください。
+Xcode で `macos/FolderMerger.xcodeproj` を開き、FolderMerger スキームで Run することもできます。初回起動時に Gatekeeper がブロックした場合は[マニュアル](docs/user-guide-ja.md#入手起動と手動アップデート)を参照してください。
 
 ## 使い方
 

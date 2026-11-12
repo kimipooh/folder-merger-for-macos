@@ -22,9 +22,9 @@ Developer ID 署名・Apple 公証なしで配布する。現在の CODE_SIGNING
 4. 以下をリポジトリルートで実行する。生成物は同期ストレージ外の一時領域へ置く。
 
 ```sh
-swift test --scratch-path "$TMPDIR/fm-build"
+swift test --package-path macos --scratch-path "$TMPDIR/fm-build"
 release_work=$(mktemp -d "${TMPDIR%/}/fm-release.XXXXXX")
-xcodebuild -project FolderMerger.xcodeproj -scheme FolderMerger \
+xcodebuild -project macos/FolderMerger.xcodeproj -scheme FolderMerger \
   -configuration Release -derivedDataPath "$release_work/dd" build
 release_app="$release_work/dd/Build/Products/Release/Folder Merger.app"
 plutil -p "$release_app/Contents/Info.plist"

@@ -3,6 +3,68 @@ import Darwin
 @testable import FolderMergerCore
 
 final class MergeLogTests: XCTestCase {
+    func testCSVProtectionPredicate() {
+        let dangerous = ["=", "+", "-", "@", "\t", "\r", "\n", "＝", "＋", "－", "＠"]
+        for lead in dangerous {
+            for prefix in ["", " ", "\u{00a0}", "\u{2003}", "\u{2028}", "\u{200B}", "\u{FEFF}", "\u{0000}", "\u{007f}", " \u{200B}\u{0001}"] {
+                XCTAssertTrue(MergeLog.needsCSVProtection(prefix + lead + "日本語,\"資料\"\r\n"), (prefix + lead).debugDescription)
+            }
+        }
+        for safe in ["", " ", "\u{200B}", " \u{0000}\u{FEFF}", "'quoted.txt", "''=x", "'=1", "日本語", "a=b", "a\t=1", "資料,\"名前\"\n=1", " ' =1"] {
+            XCTAssertFalse(MergeLog.needsCSVProtection(safe), safe.debugDescription)
+        }
+        for id in MergeLog.csvColumnIdentifiers + ["Protected columns", "保護した列", MergeLog.csvColumnIdentifiers.joined(separator: ";")] {
+            XCTAssertFalse(MergeLog.needsCSVProtection(id))
+        }
+    }
+
+    func testAllCSVColumnsAndHeadersRoundTrip() throws {
+        let originals = ["=1+1", "+1", "-1", "@SUM(1)", "\ttext", "\rtext", "\ntext", "＝1", " ＋1", "\u{200B}＠日本語,\"資料\"\r\n"]
+        let data = Data([0xef, 0xbb, 0xbf]) + Data(MergeLog.csv(originals).utf8)
+        let row = try XCTUnwrap(parse(data).first)
+        XCTAssertEqual(row[10], MergeLog.csvColumnIdentifiers.joined(separator: ";"))
+        XCTAssertEqual(row.prefix(10).map { String($0.dropFirst()) }, originals)
+        // Even a translated heading starting with a formula is protected and recorded.
+        let header = try XCTUnwrap(parse(Data([0xef, 0xbb, 0xbf]) + Data(MergeLog.csv(originals, metadataHeading: "Protected columns").utf8)).first)
+        XCTAssertEqual(header[10], MergeLog.csvColumnIdentifiers.joined(separator: ";"))
+        XCTAssertEqual(header.prefix(10), row.prefix(10))
+    }
+
+    func testEngineCSVRestoresJournalAndLeavesTXTAndEventsUnchanged() throws {
+        let names = ["=1+1", "+1", "-1", "@SUM(1)", "＝1", "＋1", "－1", "＠1", " =1", "\u{200B}=1", "\tname", "\rname", "\nname", "'quoted.txt", "''=x", "日本語,\"資料\"\r\n.txt", "=日本語,\"資料\"\n.txt"]
+        for name in names { try write(0, name, "synthetic") }
+        let journalDirectory = base.appendingPathComponent("journals")
+        try FileManager.default.createDirectory(at: journalDirectory, withIntermediateDirectories: true)
+        let log = MergeLog(request: request(), detailed: true, language: "en", temporaryDirectory: journalDirectory)
+        var events: [MergeEvent] = []
+        let result = MergeEngine().run(request(), detailedLog: true, event: { events.append($0) }, logEvent: log.record)
+        log.finish(result)
+        XCTAssertEqual(result.status, .success)
+        let journal = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: journalDirectory, includingPropertiesForKeys: nil).first)
+        let originalRows = try Data(contentsOf: journal).split(separator: 10).map { try JSONDecoder().decode([String].self, from: Data($0)) }
+        let journalBeforeExport = try Data(contentsOf: journal)
+        let rows = try parse(exported(log, .csv))
+        XCTAssertEqual(rows.count, originalRows.count + 1)
+        for (row, original) in zip(rows.dropFirst(), originalRows) {
+            let ids = row[10].split(separator: ";").map(String.init)
+            XCTAssertEqual(ids, original.enumerated().compactMap { MergeLog.needsCSVProtection($0.element) ? MergeLog.csvColumnIdentifiers[$0.offset] : nil })
+            for index in 0..<10 {
+                let protected = ids.contains(MergeLog.csvColumnIdentifiers[index])
+                XCTAssertEqual(Data((protected ? String(row[index].dropFirst()) : row[index]).utf8), Data(original[index].utf8))
+                if protected { XCTAssertTrue(row[index].hasPrefix("'")) }
+            }
+        }
+        let txt = String(decoding: try exported(log, .txt), as: UTF8.self)
+        for name in names {
+            let escaped = name.replacingOccurrences(of: "\r", with: "\\r").replacingOccurrences(of: "\n", with: "\\n")
+            XCTAssertTrue(txt.contains("Relative Path: " + escaped + " |"), name.debugDescription)
+            XCTAssertTrue(events.contains { $0.kind == .copied && $0.relativePath == name })
+            XCTAssertTrue(originalRows.contains { $0[1] == "Copied" && $0[2] == name && $0[3] == inputs[0].path })
+        }
+        XCTAssertFalse(txt.contains("Protected columns:"))
+        XCTAssertEqual(try Data(contentsOf: journal), journalBeforeExport)
+    }
+
     func testTimestampFormattingUsesInjectedTimezoneAndNanoseconds() {
         let zone = TimeZone(secondsFromGMT: 9 * 60 * 60)!
         let value = FileModificationTime(timespec(tv_sec: 1_794_445_201, tv_nsec: 123_456_789))
@@ -59,7 +121,7 @@ final class MergeLogTests: XCTestCase {
             i += 1
         }
         XCTAssertFalse(quoted); XCTAssertTrue(field.isEmpty); XCTAssertTrue(fields.isEmpty)
-        XCTAssertTrue(rows.allSatisfy { $0.count == 10 })
+        XCTAssertTrue(rows.allSatisfy { $0.count == 11 })
         return rows
     }
     func testSelectionsSkippedNewerDatesAndSpecialPathsInBothFormats() throws {
@@ -76,7 +138,7 @@ final class MergeLogTests: XCTestCase {
         log.finish(result)
         XCTAssertEqual(result.status, .success); XCTAssertEqual(displayedSkips, 0)
         let rows = try parse(exported(log, .csv))
-        XCTAssertEqual(rows[0], ["Time", "Action", "Relative Path", "Input", "Compared With", "Decision", "Applied Rule", "Input Modified", "Compared Modified", "Details"])
+        XCTAssertEqual(rows[0], ["Time", "Action", "Relative Path", "Input", "Compared With", "Decision", "Applied Rule", "Input Modified", "Compared Modified", "Details", "Protected columns"])
         let selections = rows.filter { $0[1] == "File selection" }
         XCTAssertEqual(selections.count, 2)
         XCTAssertTrue(selections.allSatisfy { $0[2] == name && !$0[4].isEmpty && !$0[6].isEmpty })
@@ -166,7 +228,7 @@ final class MergeLogTests: XCTestCase {
         let result = engine.run(request(), logEvent: log.record); log.finish(result)
         XCTAssertEqual(result.status, .warnings)
         let rows = try parse(exported(log, .csv))
-        XCTAssertEqual(rows[0], ["時刻", "処理", "相対パス", "入力元", "比較対象", "判定", "適用ルール", "入力元の変更日時", "比較対象の変更日時", "詳細"])
+        XCTAssertEqual(rows[0], ["時刻", "処理", "相対パス", "入力元", "比較対象", "判定", "適用ルール", "入力元の変更日時", "比較対象の変更日時", "詳細", "保護した列"])
         XCTAssertTrue(rows.contains { $0[1] == "警告" && $0[2] == "file" })
         XCTAssertTrue(rows.contains { $0[1] == "最終結果" && $0[5] == "警告ありで完了" })
         let txt = String(decoding: try exported(log, .txt), as: UTF8.self)
@@ -184,6 +246,7 @@ final class MergeLogTests: XCTestCase {
             let rows = try parse(exported(log, .csv))
             XCTAssertEqual(rows[0][0], language == "ja" ? "時刻" : "Time")
             XCTAssertEqual(rows[0][9], language == "ja" ? "詳細" : "Details")
+            XCTAssertEqual(rows[0][10], language == "ja" ? "保護した列" : "Protected columns")
             XCTAssertTrue(rows.contains { $0[9].contains(language == "ja" ? "ログは不完全です" : "Incomplete log") })
             let txt = String(decoding: try exported(log, .txt), as: UTF8.self)
             XCTAssertTrue(txt.contains(language == "ja" ? "実行条件" : "Run conditions"))

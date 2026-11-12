@@ -1671,6 +1671,14 @@
         }
       }
     },
+    "Protected columns": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Protected columns"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "保護した列"}}
+      },
+      "generatesSymbol": false
+    },
     "Relative Path": {
       "localizations": {
         "en": {

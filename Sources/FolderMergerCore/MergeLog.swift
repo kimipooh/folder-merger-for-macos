@@ -103,16 +103,11 @@ public final class MergeLog: @unchecked Sendable {
         defer { try? output.close() }
         func write(_ s: String) throws { try output.write(contentsOf: Data(s.utf8)) }
         let headings = ["Time", "Action", "Relative Path", "Input", "Compared With", "Decision", "Applied Rule", "Input Modified", "Compared Modified", "Details"].map(text)
-        func csv(_ row: [String]) -> String {
-            row.map { value in
-                value.rangeOfCharacter(from: CharacterSet(charactersIn: ",\"\r\n")) != nil ? "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\"" : value
-            }.joined(separator: ",") + "\r\n"
-        }
-        if format == .csv { try output.write(contentsOf: Data([0xef, 0xbb, 0xbf])); try write(csv(headings)) }
+        if format == .csv { try output.write(contentsOf: Data([0xef, 0xbb, 0xbf])); try write(Self.csv(headings, metadataHeading: text("Protected columns"))) }
         else { try write(text("Run conditions") + "\n") }
         if let recordingError {
             let warning = text("Incomplete log") + ": " + recordingError
-            if format == .csv { try write(csv(["", text("Warning"), "", "", "", "", "", "", "", warning])) }
+            if format == .csv { try write(Self.csv(["", text("Warning"), "", "", "", "", "", "", "", warning])) }
             else { try write(warning + "\n") }
         }
         let input: FileHandle
@@ -130,7 +125,7 @@ public final class MergeLog: @unchecked Sendable {
         var section = text("Run conditions")
         func row(_ data: Data) throws {
             let values = try JSONDecoder().decode([String].self, from: data)
-            if format == .csv { try write(csv(values)); return }
+            if format == .csv { try write(Self.csv(values)); return }
             let next = values[1] == text("Run conditions") ? text("Run conditions") : values[1] == text("Final result") ? text("Final result") : text("Activity log (chronological)")
             if next != section { section = next; try write("\n" + section + "\n") }
             // Keep each event on one physical TXT line even for unusual filenames.
@@ -148,6 +143,42 @@ public final class MergeLog: @unchecked Sendable {
             _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
         } else { try FileManager.default.moveItem(at: temporary, to: destination) }
     }
+    // Stable identifiers describe only the original ten columns, in output order.
+    static let csvColumnIdentifiers = ["time", "action", "relative_path", "input", "compared_with",
+                                       "decision", "applied_rule", "input_modified", "compared_modified", "details"]
+
+    static func needsCSVProtection(_ value: String) -> Bool {
+        let dangerous = CharacterSet(charactersIn: "=+-@\t\r\n＝＋－＠")
+        for scalar in value.unicodeScalars {
+            // Test before skipping: a leading TAB/CR/LF is itself dangerous.
+            if dangerous.contains(scalar) { return true }
+            if CharacterSet.whitespacesAndNewlines.contains(scalar) { continue }
+            switch scalar.properties.generalCategory {
+            case .control, .format: continue
+            default: return false
+            }
+        }
+        return false
+    }
+
+    /// Also accepts the localized eleventh heading. Its metadata describes the
+    /// original ten headings exactly as it does ordinary data rows.
+    static func csv(_ row: [String], metadataHeading: String? = nil) -> String {
+        var protected: [String] = []
+        var values = row.enumerated().map { index, value in
+            if needsCSVProtection(value) {
+                protected.append(csvColumnIdentifiers[index])
+                return "'" + value
+            }
+            return value
+        }
+        values.append(protected.isEmpty ? (metadataHeading ?? "") : protected.joined(separator: ";"))
+        return values.map { value in
+            value.rangeOfCharacter(from: CharacterSet(charactersIn: ",\"\r\n")) != nil
+                ? "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\"" : value
+        }.joined(separator: ",") + "\r\n"
+    }
+
     static func time(_ date: Date, timeZone: TimeZone = .current) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")

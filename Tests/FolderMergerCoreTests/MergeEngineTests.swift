@@ -20,7 +20,16 @@ final class MergeEngineTests: XCTestCase {
         for url in [a!, b!, parent!] { try fm.createDirectory(at: url, withIntermediateDirectories: true) }
     }
     override func tearDownWithError() throws { try fm.removeItem(at: base) }
-    var request: MergeRequest { MergeRequest(inputs: [a, b], destination: parent, name: "統合資料") }
+    var request: MergeRequest { MergeRequest(inputs: [a, b], output: parent) }
+
+    func outputFolder(_ name: String) -> URL {
+        let url = parent.appendingPathComponent(name)
+        if !fm.fileExists(atPath: url.path) { try! fm.createDirectory(at: url, withIntermediateDirectories: false) }
+        return url
+    }
+    func clearOutput(_ output: URL) throws {
+        for url in try fm.contentsOfDirectory(at: output, includingPropertiesForKeys: nil) { try fm.removeItem(at: url) }
+    }
 
     func write(_ root: URL, _ path: String, _ data: Data = Data("content".utf8)) throws {
         let url = root.appendingPathComponent(path)
@@ -95,7 +104,7 @@ final class MergeEngineTests: XCTestCase {
         try write(a, ".hidden")
         let before = try [snapshot(a), snapshot(b)]
         let output = try MergeEngine().merge(request)
-        XCTAssertEqual(output.lastPathComponent, "統合資料")
+        XCTAssertEqual(output, parent)
         XCTAssertTrue(fm.fileExists(atPath: output.appendingPathComponent("空フォルダ").path))
         for (root, path) in [(a!, "報告書/本文.pdf"), (b!, "報告書/図.png"), (a!, ".hidden")] {
             XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(path)), try Data(contentsOf: output.appendingPathComponent(path)))
@@ -122,7 +131,7 @@ final class MergeEngineTests: XCTestCase {
         let equivalent = lstat(parent.path + "/" + nfd, &info) == 0
         try fm.removeItem(atPath: parent.path + "/" + nfc)
         let before = try [a!, b!, c].map(snapshot)
-        let output = try MergeEngine().merge(MergeRequest(inputs: [a, b, c], destination: parent, name: "out"))
+        let output = try MergeEngine().merge(MergeRequest(inputs: [a, b, c], output: outputFolder("out")))
         XCTAssertEqual(try fm.contentsOfDirectory(atPath: output.path).count, equivalent ? 1 : 2)
         for i in 0..<3 {
             let name = !equivalent && i == 1 ? nfd : nfc
@@ -178,7 +187,7 @@ final class MergeEngineTests: XCTestCase {
                 XCTAssertEqual(source.st_mode & 0o777, target.st_mode & 0o777)
                 XCTAssertEqual(source.st_mtimespec.tv_sec, target.st_mtimespec.tv_sec)
                 XCTAssertEqual(source.st_mtimespec.tv_nsec, target.st_mtimespec.tv_nsec)
-                try fm.removeItem(at: output)
+                try clearOutput(output)
             }
             XCTAssertEqual(try [snapshot(a), snapshot(b)], before)
             try assertNoTemporary()
@@ -189,7 +198,7 @@ final class MergeEngineTests: XCTestCase {
         try write(a, "same", Data("a".utf8)); try write(b, "same", Data("b".utf8))
         var req = request; req.options.samePathPolicy = .newer
         try assertFailure(req, containing: ["same", a.path, b.path, L("Modification dates are equal.")])
-        XCTAssertFalse(fm.fileExists(atPath: req.output.path))
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: req.output.path), [])
     }
 
     func testNewerPolicyIncomparableDatesStopsAndCleansUp() throws {
@@ -198,7 +207,7 @@ final class MergeEngineTests: XCTestCase {
         engine.modificationTime = { _ in FileModificationTime(timespec(tv_sec: 0, tv_nsec: -1)) }
         var req = request; req.options.samePathPolicy = .newer
         try assertFailure(req, containing: ["same", a.path, b.path, L("Modification dates cannot be compared.")], engine: engine)
-        XCTAssertFalse(fm.fileExists(atPath: req.output.path))
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: req.output.path), [])
     }
 
     func testThreeInputPolicySelectionWithIdenticalCandidate() throws {
@@ -209,7 +218,7 @@ final class MergeEngineTests: XCTestCase {
         try setMtime(a, "same", nanos: 10); try setMtime(b, "same", nanos: 30); try setMtime(c, "same", nanos: 20)
         let before = try [a!, b!, c].map(snapshot)
         for policy in [SamePathPolicy.earlier, .later, .newer] {
-            let req = MergeRequest(inputs: [a, b, c], destination: parent, name: "out", options: MergeOptions(samePathPolicy: policy))
+            let req = MergeRequest(inputs: [a, b, c], output: outputFolder("out"), options: MergeOptions(samePathPolicy: policy))
             var events: [MergeEvent] = []
             let result = MergeEngine().run(req, detailedLog: true, event: { events.append($0) })
             let winner = policy == .earlier ? a! : b!
@@ -217,14 +226,14 @@ final class MergeEngineTests: XCTestCase {
             XCTAssertEqual(try Data(contentsOf: output.appendingPathComponent("same")), try Data(contentsOf: winner.appendingPathComponent("same")))
             XCTAssertEqual(events.last { $0.kind == .copied }?.sourceInput, winner)
             XCTAssertEqual(result.counters.skipped, policy == .earlier ? 0 : 1)
-            try fm.removeItem(at: output)
+            try clearOutput(output)
         }
         // A third different candidate must update the currently selected input.
         try fm.removeItem(at: c.appendingPathComponent("same")); try write(c, "same", Data("c".utf8))
         try setMtime(c, "same", nanos: 40)
         for policy in [SamePathPolicy.earlier, .later, .newer] {
             var events: [MergeEvent] = []
-            let req = MergeRequest(inputs: [a, b, c], destination: parent, name: "out", options: MergeOptions(samePathPolicy: policy))
+            let req = MergeRequest(inputs: [a, b, c], output: outputFolder("out"), options: MergeOptions(samePathPolicy: policy))
             let result = MergeEngine().run(req, event: { events.append($0) })
             let winner = policy == .earlier ? a! : c
             XCTAssertEqual(events.filter { $0.kind == .fileSelected }.count, 2)
@@ -258,7 +267,7 @@ final class MergeEngineTests: XCTestCase {
                 XCTAssertEqual(try Data(contentsOf: out.appendingPathComponent(first)), Data((policy == .earlier ? "first" : "last").utf8))
                 XCTAssertEqual(events.filter { $0.kind == .fileSelected }.count, 1)
             }
-            try fm.removeItem(at: out)
+            try clearOutput(out)
         }
         try assertNoTemporary()
     }
@@ -275,7 +284,7 @@ final class MergeEngineTests: XCTestCase {
         try xattr(b.appendingPathComponent(nfc).appendingPathComponent(nfc), "user.foldermerger-test", Data("selected-file".utf8))
         try setMtime(a, nfd, nanos: 11); try setMtime(b, nfc, nanos: 22)
         let before = try [snapshot(a), snapshot(b)]
-        let req = MergeRequest(inputs: [a, b], destination: parent, name: "out", options: MergeOptions(directoryDates: true, samePathPolicy: .later))
+        let req = MergeRequest(inputs: [a, b], output: outputFolder("out"), options: MergeOptions(directoryDates: true, samePathPolicy: .later))
         let output = try MergeEngine().merge(req)
         let folders = try fm.contentsOfDirectory(atPath: output.path)
         if folders.count == 1 {
@@ -326,7 +335,7 @@ final class MergeEngineTests: XCTestCase {
             try write(root, "Google フォト/.DS_Store", Data("\(index)".utf8))
         }
         let before = try roots.map(snapshot)
-        let output = try MergeEngine().merge(MergeRequest(inputs: roots, destination: parent, name: "Takeout"))
+        let output = try MergeEngine().merge(MergeRequest(inputs: roots, output: outputFolder("Takeout")))
         for path in paths { XCTAssertTrue(fm.fileExists(atPath: output.appendingPathComponent(path).path)) }
         XCTAssertFalse(fm.fileExists(atPath: output.appendingPathComponent(".DS_Store").path))
         XCTAssertFalse(fm.fileExists(atPath: output.appendingPathComponent("Google フォト/.DS_Store").path))
@@ -352,7 +361,7 @@ final class MergeEngineTests: XCTestCase {
         try write(roots[0], "same", Data("A".utf8))
         try write(roots[1], "same", Data("B".utf8))
         try write(roots[2], "same", Data("B".utf8))
-        var req = MergeRequest(inputs: roots, destination: parent, name: "later")
+        var req = MergeRequest(inputs: roots, output: outputFolder("later"))
         req.options.samePathPolicy = .later
         var later: [ConflictingFileDecision] = []
         _ = MergeEngine().run(req, event: { if let d = $0.finalSelection { later.append(d) } })
@@ -366,7 +375,7 @@ final class MergeEngineTests: XCTestCase {
         try write(roots[0], "same", Data("A".utf8))
         try write(roots[1], "same", Data("A".utf8))
         try write(roots[2], "same", Data("B".utf8))
-        req = MergeRequest(inputs: roots, destination: parent, name: "earlier")
+        req = MergeRequest(inputs: roots, output: outputFolder("earlier"))
         var earlier: [ConflictingFileDecision] = []
         _ = MergeEngine().run(req, event: { if let d = $0.finalSelection { earlier.append(d) } })
         XCTAssertEqual(earlier.first?.selectedInput, roots[0])
@@ -377,7 +386,8 @@ final class MergeEngineTests: XCTestCase {
         try write(a, "same", Data("abc".utf8)); try write(b, "same", Data("abd".utf8))
         var req = request; req.options.samePathPolicy = .stop
         try assertFailure(req, containing: ["same", a.path, b.path])
-        XCTAssertFalse(fm.fileExists(atPath: request.output.path))
+        XCTAssertTrue(fm.fileExists(atPath: request.output.path))
+        XCTAssertTrue(try fm.contentsOfDirectory(atPath: request.output.path).allSatisfy { $0 == ".DS_Store" || $0.contains(".foldermerger-") })
     }
     func testFileDirectoryConflict() throws {
         try write(a, "item"); try write(b, "item/child")
@@ -396,7 +406,7 @@ final class MergeEngineTests: XCTestCase {
         if caseSensitive {
             let output = try MergeEngine().merge(request)
             XCTAssertEqual(try fm.contentsOfDirectory(atPath: output.path).count, 2)
-            try fm.removeItem(at: output)
+            try clearOutput(output)
         } else { try assertFailure(containing: ["Photo.jpg", "photo.jpg", a.path, b.path]) }
         try fm.removeItem(at: a.appendingPathComponent("Photo.jpg"))
         try fm.removeItem(at: b.appendingPathComponent("photo.jpg"))
@@ -418,46 +428,48 @@ final class MergeEngineTests: XCTestCase {
         }
     }
 
-    func testInvalidNamesAndMissingInputs() throws {
-        for name in ["", ".", "..", "bad/name", "bad:name", "bad\0name", " \n\t "] {
-            try assertFailure(MergeRequest(inputs: [a], destination: parent, name: name))
+    func testMissingInputsAndInvalidDestinations() throws {
+        try assertFailure(MergeRequest(inputs: [], output: parent))
+        let missing = base.appendingPathComponent("missing")
+        XCTAssertThrowsError(try MergeEngine.validate(MergeRequest(inputs: [a], output: missing)))
+        let file = base.appendingPathComponent("file")
+        try write(base, "file")
+        XCTAssertThrowsError(try MergeEngine.validate(MergeRequest(inputs: [a], output: file)))
+        for target in [a!, missing] {
+            let link = base.appendingPathComponent("link")
+            try fm.createSymbolicLink(at: link, withDestinationURL: target)
+            XCTAssertThrowsError(try MergeEngine.validate(MergeRequest(inputs: [a], output: link)))
+            try fm.removeItem(at: link)
         }
-        try assertFailure(MergeRequest(inputs: [], destination: parent, name: "out"))
     }
-    func testExistingOutputKindsIncludingDanglingSymlink() throws {
-        try write(parent, request.name)
-        try assertFailure(containing: [request.output.path])
-        XCTAssertEqual(try Data(contentsOf: request.output), Data("content".utf8))
-        try fm.removeItem(at: request.output)
-        try fm.createDirectory(at: request.output, withIntermediateDirectories: false)
-        try assertFailure()
-        try fm.removeItem(at: request.output)
-        try fm.createSymbolicLink(atPath: request.output.path, withDestinationPath: a.path)
-        try assertFailure()
-        try fm.removeItem(at: request.output)
-        try fm.createSymbolicLink(atPath: request.output.path, withDestinationPath: base.appendingPathComponent("missing").path)
-        try assertFailure()
+
+    func testNonemptyDestinationIncludesHiddenFilesAndFolders() throws {
+        for name in ["normal", ".hidden", "subfolder/child"] {
+            try write(parent, name)
+            XCTAssertThrowsError(try MergeEngine.validate(request))
+            try clearOutput(parent)
+        }
     }
     func testDuplicateNestedAndAliasInputsAndDestination() throws {
-        try assertFailure(MergeRequest(inputs: [a, a], destination: parent, name: "out"))
+        try assertFailure(MergeRequest(inputs: [a, a], output: outputFolder("out")))
         let child = a.appendingPathComponent("child")
         try fm.createDirectory(at: child, withIntermediateDirectories: true)
-        try assertFailure(MergeRequest(inputs: [a, child], destination: parent, name: "out"))
-        try assertFailure(MergeRequest(inputs: [child, a], destination: parent, name: "out"))
-        try assertFailure(MergeRequest(inputs: [a], destination: child, name: "out"))
-        try assertFailure(MergeRequest(inputs: [a], destination: a, name: "out"))
+        try assertFailure(MergeRequest(inputs: [a, child], output: outputFolder("out")))
+        try assertFailure(MergeRequest(inputs: [child, a], output: outputFolder("out")))
+        try assertFailure(MergeRequest(inputs: [a], output: child))
+        try assertFailure(MergeRequest(inputs: [a], output: a))
         // Existing output containing an input is rejected before any writes.
-        try assertFailure(MergeRequest(inputs: [child], destination: base, name: a.lastPathComponent))
+        try assertFailure(MergeRequest(inputs: [child], output: base))
         let alias = base.appendingPathComponent("alias")
         try fm.createSymbolicLink(at: alias, withDestinationURL: a)
-        try assertFailure(MergeRequest(inputs: [a, alias], destination: parent, name: "out"))
-        try assertFailure(MergeRequest(inputs: [alias], destination: parent, name: "out"), containing: [L("Symbolic links cannot be used as input roots: %@", alias.path)])
-        try assertFailure(MergeRequest(inputs: [a], destination: alias.appendingPathComponent("child"), name: "out"))
+        try assertFailure(MergeRequest(inputs: [a, alias], output: outputFolder("out")))
+        try assertFailure(MergeRequest(inputs: [alias], output: outputFolder("out")), containing: [L("Symbolic links cannot be used as input roots: %@", alias.path)])
+        try assertFailure(MergeRequest(inputs: [a], output: alias.appendingPathComponent("child")))
         let upper = base.appendingPathComponent("CASEINPUT")
         try fm.createDirectory(at: upper, withIntermediateDirectories: false)
         let lower = base.appendingPathComponent("caseinput")
         if fm.fileExists(atPath: lower.path) {
-            try assertFailure(MergeRequest(inputs: [upper, lower], destination: parent, name: "out"))
+            try assertFailure(MergeRequest(inputs: [upper, lower], output: outputFolder("out")))
         }
     }
     func testSymlinksAndFIFORejectedWithoutFollowing() throws {
@@ -471,12 +483,87 @@ final class MergeEngineTests: XCTestCase {
         XCTAssertEqual(mkfifo(a.appendingPathComponent("pipe").path, 0o600), 0)
         try assertFailure(containing: ["pipe", a.path])
     }
+    func testChosenDestinationIdentityMetadataAndDSStoreArePreserved() throws {
+        try write(a, "one"); try write(b, "folder/two")
+        try write(parent, ".DS_Store", Data("finder".utf8))
+        XCTAssertEqual(chmod(parent.path, 0o750), 0)
+        try xattr(parent, "user.foldermerger-destination", Data("tag".utf8))
+        let before = try measured(parent)
+        let inputsBefore = try [snapshot(a), snapshot(b)]
+        let engine = MergeEngine()
+        engine.beforeCommit = {
+            let temporary = try XCTUnwrap(self.fm.contentsOfDirectory(at: self.parent, includingPropertiesForKeys: nil)
+                .first { $0.lastPathComponent.hasPrefix(".foldermerger-") })
+            XCTAssertEqual(try self.measured(temporary).st_mode & 0o777, 0o700)
+        }
+        let output = try engine.merge(request)
+        let after = try measured(parent)
+        XCTAssertEqual(output, parent)
+        XCTAssertEqual(before.st_ino, after.st_ino)
+        XCTAssertEqual(before.st_mode, after.st_mode)
+        XCTAssertEqual(before.st_birthtimespec.tv_sec, after.st_birthtimespec.tv_sec)
+        XCTAssertEqual(before.st_birthtimespec.tv_nsec, after.st_birthtimespec.tv_nsec)
+        XCTAssertEqual(try xattr(parent, "user.foldermerger-destination"), Data("tag".utf8))
+        XCTAssertEqual(try Data(contentsOf: parent.appendingPathComponent(".DS_Store")), Data("finder".utf8))
+        XCTAssertEqual(Set(try fm.contentsOfDirectory(atPath: output.path)), ["one", "folder", ".DS_Store"])
+        XCTAssertEqual(try [snapshot(a), snapshot(b)], inputsBefore)
+        try assertNoTemporary()
+    }
+
+    func testMidPublicationCollisionRollsBackOnlyPublishedItems() throws {
+        try write(a, "first"); try write(a, "second")
+        try write(parent, ".DS_Store", Data("finder".utf8))
+        let before = try measured(parent)
+        let engine = MergeEngine()
+        engine.beforePublishItem = { name, index in
+            if index == 1 {
+                XCTAssertTrue(self.fm.fileExists(atPath: self.parent.appendingPathComponent("first").path))
+                try self.write(self.parent, name, Data("competitor".utf8))
+                try self.write(self.parent, "unrelated", Data("external".utf8))
+            }
+        }
+        try assertFailure(engine: engine)
+        XCTAssertEqual(Set(try fm.contentsOfDirectory(atPath: parent.path)), ["second", "unrelated", ".DS_Store"])
+        XCTAssertEqual(try Data(contentsOf: parent.appendingPathComponent("second")), Data("competitor".utf8))
+        XCTAssertEqual(try Data(contentsOf: parent.appendingPathComponent("unrelated")), Data("external".utf8))
+        XCTAssertEqual(try Data(contentsOf: parent.appendingPathComponent(".DS_Store")), Data("finder".utf8))
+        XCTAssertEqual(before.st_ino, try measured(parent).st_ino)
+    }
+
+    func testCancellationAfterPublicationStartsFinishesPublication() throws {
+        try write(a, "first"); try write(b, "second")
+        let token = CancellationToken(), engine = MergeEngine()
+        engine.beforePublishItem = { _, _ in token.cancel() }
+        XCTAssertEqual(try engine.merge(request, cancellation: token), parent)
+        XCTAssertEqual(Set(try fm.contentsOfDirectory(atPath: parent.path)), ["first", "second"])
+        try assertNoTemporary()
+    }
+
+    func testFailureAndCancellationKeepFinderMetadataAndCleanUnicodeProbe() throws {
+        try write(parent, ".DS_Store", Data("finder".utf8))
+        try write(a, "か\u{3099}", Data("left".utf8)); try write(b, "か\u{3099}", Data("right".utf8))
+        var req = request; req.options.samePathPolicy = .stop
+        try assertFailure(req)
+        let engine = MergeEngine()
+        engine.attributeOperation = { _, _, _ in EACCES }
+        req.options = allAttributes
+        let result = engine.run(req)
+        XCTAssertEqual(result.status, .failure)
+        let token = CancellationToken()
+        engine.attributeOperation = { _, _, operation in operation() }
+        engine.beforeCommit = { token.cancel() }
+        XCTAssertThrowsError(try engine.merge(request, cancellation: token))
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: parent.path), [".DS_Store"])
+        XCTAssertEqual(try Data(contentsOf: parent.appendingPathComponent(".DS_Store")), Data("finder".utf8))
+        try assertNoTemporary()
+    }
+
     func testCommitRacePreservesCompetitorAndCleansTemporary() throws {
         try write(a, "one")
         let engine = MergeEngine()
-        engine.beforeCommit = { try self.write(self.parent, self.request.name, Data("competitor".utf8)) }
+        engine.beforeCommit = { try self.write(self.parent, "competitor", Data("competitor".utf8)) }
         try assertFailure(containing: [request.output.path], engine: engine)
-        XCTAssertEqual(try Data(contentsOf: request.output), Data("competitor".utf8))
+        XCTAssertEqual(try Data(contentsOf: request.output.appendingPathComponent("competitor")), Data("competitor".utf8))
     }
     func testCancellationMidCopyCleansAndPreservesInputs() throws {
         try write(a, "large", Data(repeating: 23, count: 12 * 1_048_576))
@@ -488,7 +575,8 @@ final class MergeEngineTests: XCTestCase {
             if p.bytesCopied >= 2 * 1_048_576 { token.cancel() }
         }) { XCTAssertEqual(($0 as? MergeError)?.kind, .cancelled) }
         XCTAssertEqual(copied, 2 * 1_048_576)
-        XCTAssertFalse(fm.fileExists(atPath: request.output.path))
+        XCTAssertTrue(fm.fileExists(atPath: request.output.path))
+        XCTAssertTrue(try fm.contentsOfDirectory(atPath: request.output.path).allSatisfy { $0 == ".DS_Store" || $0.contains(".foldermerger-") })
         try assertNoTemporary()
         XCTAssertEqual(try [snapshot(a), snapshot(b)], before)
     }
@@ -500,7 +588,8 @@ final class MergeEngineTests: XCTestCase {
             let before = try [snapshot(a), snapshot(b)]
             XCTAssertThrowsError(try MergeEngine().merge(request, cancellation: token) { if $0.phase == phase { token.cancel() } })
             XCTAssertEqual(try [snapshot(a), snapshot(b)], before)
-            XCTAssertFalse(fm.fileExists(atPath: request.output.path))
+            XCTAssertTrue(fm.fileExists(atPath: request.output.path))
+            XCTAssertTrue(try fm.contentsOfDirectory(atPath: request.output.path).allSatisfy { $0 == ".DS_Store" || $0.contains(".foldermerger-") })
             try assertNoTemporary()
         }
     }
@@ -515,7 +604,7 @@ final class MergeEngineTests: XCTestCase {
             let output = try MergeEngine().merge(request)
             XCTAssertTrue(fm.fileExists(atPath: output.appendingPathComponent("Album/one").path))
             XCTAssertTrue(fm.fileExists(atPath: output.appendingPathComponent("album/two").path))
-            try fm.removeItem(at: output)
+            try clearOutput(output)
         } else { try assertFailure(containing: ["Album", "album", a.path, b.path]) }
         try fm.removeItem(at: a.appendingPathComponent("Album"))
         try fm.removeItem(at: b.appendingPathComponent("album"))
@@ -542,7 +631,8 @@ final class MergeEngineTests: XCTestCase {
             XCTAssertTrue($0.localizedDescription.contains(L("%@\nCannot remove the temporary folder: %@\n%@", "", reportedPath, "")))
             XCTAssertTrue($0.localizedDescription.contains(reportedPath), $0.localizedDescription)
         }
-        XCTAssertFalse(fm.fileExists(atPath: request.output.path))
+        XCTAssertTrue(fm.fileExists(atPath: request.output.path))
+        XCTAssertTrue(try fm.contentsOfDirectory(atPath: request.output.path).allSatisfy { $0 == ".DS_Store" || $0.contains(".foldermerger-") })
         XCTAssertEqual(try [snapshot(a), snapshot(b)], before)
     }
 }
@@ -584,7 +674,7 @@ extension MergeEngineTests {
         return value
     }
     private func execute(_ options: MergeOptions, name: String = UUID().uuidString, inputs: [URL]? = nil) -> MergeResult {
-        MergeEngine().run(MergeRequest(inputs: inputs ?? [a, b], destination: parent, name: name, options: options))
+        MergeEngine().run(MergeRequest(inputs: inputs ?? [a, b], output: outputFolder(name), options: options))
     }
     private func assertDates(_ target: URL, _ source: URL, file: StaticString = #filePath, line: UInt = #line) throws {
         let t = try measured(target), s = try measured(source)
@@ -737,11 +827,12 @@ extension MergeEngineTests {
                 XCTAssertEqual(result.counters.warnings, 1)
                 XCTAssertEqual(result.warnings.first?.relativePath, "file")
                 XCTAssertEqual(result.warnings.first?.attribute, "変更日")
-                try fm.removeItem(at: XCTUnwrap(result.output))
+                try clearOutput(XCTUnwrap(result.output))
             } else {
                 XCTAssertEqual(result.status, .failure); XCTAssertEqual(result.counters.errors, 1)
                 XCTAssertNil(result.output); XCTAssertTrue(result.error?.message.contains(attributeDisplayName("変更日")) == true)
-                XCTAssertFalse(fm.fileExists(atPath: request.output.path))
+                XCTAssertTrue(fm.fileExists(atPath: request.output.path))
+                XCTAssertTrue(try fm.contentsOfDirectory(atPath: request.output.path).allSatisfy { $0 == ".DS_Store" || $0.contains(".foldermerger-") })
             }
             try assertNoTemporary()
         }
@@ -774,7 +865,7 @@ extension MergeEngineTests {
             XCTAssertEqual(events.last?.kind, .completed)
             XCTAssertEqual(events.last?.counters.copied, 1)
             XCTAssertEqual(events.map(\.timestamp), events.map(\.timestamp).sorted())
-            try fm.removeItem(at: XCTUnwrap(result.output))
+            try clearOutput(XCTUnwrap(result.output))
         }
     }
 
@@ -788,7 +879,8 @@ extension MergeEngineTests {
         XCTAssertEqual(cancelled.status, .cancelled)
         XCTAssertEqual(events.suffix(2).map(\.kind), [.cancelled, .completed])
         try assertNoTemporary()
-        XCTAssertFalse(fm.fileExists(atPath: request.output.path))
+        XCTAssertTrue(fm.fileExists(atPath: request.output.path))
+        XCTAssertTrue(try fm.contentsOfDirectory(atPath: request.output.path).allSatisfy { $0 == ".DS_Store" || $0.contains(".foldermerger-") })
         try write(b, "file", Data([2]))
         events = []
         var req = request; req.options.samePathPolicy = .stop
@@ -804,7 +896,7 @@ extension MergeEngineTests {
         let snapshot = MergePlanDescription(request: req)
         req.options = allAttributes
         req.options.samePathPolicy = .later
-        req.name = "changed"
+        req.output = parent.appendingPathComponent("changed")
         XCTAssertEqual(snapshot.request.options, MergeOptions())
         XCTAssertNotEqual(snapshot.request.output, req.output)
         XCTAssertTrue(snapshot.steps.contains { $0.text == L("%@: %@", L("When different files have the same path"), SamePathPolicy.earlier.label) })

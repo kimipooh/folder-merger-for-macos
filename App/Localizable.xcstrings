@@ -145,24 +145,6 @@
       },
       "generatesSymbol": false
     },
-    "Choose Destination Parent Folder…": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose Destination Parent Folder…"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保存先親フォルダを選択…"
-          }
-        }
-      },
-      "generatesSymbol": false
-    },
     "Current item: %@": {
       "extractionState": "manual",
       "localizations": {
@@ -361,42 +343,6 @@
       },
       "generatesSymbol": false
     },
-    "Merge the contents of multiple folders into a new folder. Inputs remain unchanged.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Merge the contents of multiple folders into a new folder. Inputs remain unchanged."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "複数フォルダの中身を、新しいフォルダに統合します。入力は変更しません。"
-          }
-        }
-      },
-      "generatesSymbol": false
-    },
-    "Merged Folder": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Merged Folder"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "統合フォルダ"
-          }
-        }
-      },
-      "generatesSymbol": false
-    },
     "Next merge": {
       "extractionState": "manual",
       "localizations": {
@@ -446,42 +392,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "フォルダ以外は追加できません: %@"
-          }
-        }
-      },
-      "generatesSymbol": false
-    },
-    "Output folder name": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Output folder name"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "出力フォルダ名"
-          }
-        }
-      },
-      "generatesSymbol": false
-    },
-    "Output: %@": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Output: %@"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "作成先: %@"
           }
         }
       },
@@ -626,42 +536,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "削除"
-          }
-        }
-      },
-      "generatesSymbol": false
-    },
-    "Select a destination": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Select a destination"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保存先を選択してください"
-          }
-        }
-      },
-      "generatesSymbol": false
-    },
-    "Select a destination parent folder.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Select a destination parent folder."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保存先親フォルダを選択してください。"
           }
         }
       },
@@ -1365,22 +1239,6 @@
         }
       }
     },
-    "When different files have the same path: %@ (applies to the next run)": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "When different files have the same path: %@ (applies to the next run)"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "同じ場所に内容の異なるファイルがある場合：%@（次回の実行に適用）"
-          }
-        }
-      }
-    },
     "Rule for this run: %@": {
       "localizations": {
         "en": {
@@ -1500,6 +1358,86 @@
         }
       },
       "generatesSymbol": false
+    },
+    "The changed rule will apply to the next merge.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The changed rule will apply to the next merge."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更したルールは次回の統合から適用します"
+          }
+        }
+      }
+    },
+    "Choose Destination Folder…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose Destination Folder…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "統合先フォルダを選択…"
+          }
+        }
+      }
+    },
+    "Select an empty destination folder.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select an empty destination folder."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空の統合先フォルダを選択してください。"
+          }
+        }
+      }
+    },
+    "When different files have the same path: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When different files have the same path: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同じ場所に内容の異なるファイルがある場合：%@"
+          }
+        }
+      }
+    },
+    "Merge the contents of multiple folders into the chosen empty folder. Inputs remain unchanged.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Merge the contents of multiple folders into the chosen empty folder. Inputs remain unchanged."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "複数フォルダの中身を、選んだ空のフォルダへ統合します。入力は変更しません。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

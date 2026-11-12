@@ -2,9 +2,9 @@
 
 [日本語マニュアル](docs/user-guide-ja.md) · [English user guide](docs/user-guide-en.md)
 
-複数フォルダの中身を、相対パスを保って新しいフォルダに統合する日英対応アプリです。入力を移動・改名・削除せず、既存出力を上書きしません。同じ相対パスのフォルダは統合し、同一内容ファイルは1件にまとめます。内容の異なる同名ファイルは、設定で中止・先に追加した入力（既定）・後に追加した入力・変更日が新しいファイルの優先を選べます。新しい方を優先する場合、同時刻・比較不可なら中止します。Unicode の正準等価な表記違いは保存先が同一視する場合に統合し、先の表記を使います。採用判断は詳細ログオフでも記録します。フォルダ属性は先の入力、ファイル属性は採用元から取得します。
+複数フォルダの中身を、相対パスを保って選んだ空の統合先フォルダに直接統合する日英対応アプリです。入力を移動・改名・削除せず、既存出力を上書きしません。同じ相対パスのフォルダは統合し、同一内容ファイルは1件にまとめます。内容の異なる同名ファイルは、設定で中止・先に追加した入力（既定）・後に追加した入力・変更日が新しいファイルの優先を選べます。新しい方を優先する場合、同時刻・比較不可なら中止します。Unicode の正準等価な表記違いは保存先が同一視する場合に統合し、先の表記を使います。採用判断は詳細ログオフでも記録します。フォルダ属性は先の入力、ファイル属性は採用元から取得します。
 
-A Japanese/English app that merges folder contents into a new folder, preserving relative paths. Inputs are not moved, renamed, or deleted; existing outputs are never overwritten. Same-path folders are merged and identical files are deduplicated. For different file contents at the same path, choose stop, input added first (default), input added later, or newer modification date. Newer-file priority stops on equal or incomparable dates. Canonically equivalent Unicode names merge only when the destination treats them as identical, retaining the first spelling. Selection decisions appear even without detailed logging. Folder attributes come from the earlier input; file attributes come from the selected file.
+A Japanese/English app that merges folder contents directly into a chosen empty destination folder, preserving relative paths. Inputs are not moved, renamed, or deleted; existing outputs are never overwritten. Same-path folders are merged and identical files are deduplicated. For different file contents at the same path, choose stop, input added first (default), input added later, or newer modification date. Newer-file priority stops on equal or incomparable dates. Canonically equivalent Unicode names merge only when the destination treats them as identical, retaining the first spelling. Selection decisions appear even without detailed logging. Folder attributes come from the earlier input; file attributes come from the selected file.
 
 ## 入手・動作環境 / Availability and requirements
 
@@ -68,8 +68,22 @@ Alternatively, open `FolderMerger.xcodeproj` in Xcode and run the FolderMerger s
 
 ## 同名ファイルの採用結果
 
-入力一覧の番号（1、2、3…）が追加順を示し、「先に追加した入力フォルダを優先」「後に追加した入力フォルダを優先」はこの順序を指します。新しい既定値は「先に追加した入力フォルダを優先」です。「統合を中止する」を含む保存済み設定は維持し、起動時に既定値を書き込みません。見出し直下には現在の設定と「次回の実行に適用」を常時表示します。実行中の「この実行のルール」、終了後の「この結果に使用したルール」には開始時に取得した設定を表示します。
+入力一覧の番号（1、2、3…）が追加順を示し、「先に追加した入力フォルダを優先」「後に追加した入力フォルダを優先」はこの順序を指します。新しい既定値は「先に追加した入力フォルダを優先」です。「統合を中止する」を含む保存済み設定は維持し、起動時に既定値を書き込みません。見出し直下には待機中・終了後は現在の設定、統合中は開始時に取得した「この実行のルール」を表示します。統合中に現在の設定が開始時のルールと異なる場合だけ「変更したルールは次回の統合から適用します」を表示し、終了時に消します。「同名ファイルの採用結果」と保存ログには実際に使用したルールを残します。
 
 作業ログ内の独立区画「同名ファイルの採用結果」（英語: `Conflicting File Decisions`）は詳細ログオフでも表示します。内容が異なり判断した相対パスを数え、同一内容だけの省略は含めません。出力表記の相対パス、最終採用元、全不採用元、適用ルールを表示します。画面は最大1,000件で「ほか N 件（保存ログに全件）」を表示し、件数と保存ログは全件を対象にします。成功時は「採用結果は確定した出力に反映されています。」、実行中・失敗・キャンセル時は「出力は確定していません。以下は採用判断です。」を表示します。走査途中の失敗では「走査未完了のため、判断済み分のみ表示しています」と示します。
 
 詳細 TXT は実行条件の後、時系列ログの前に同名の節を置き、件数・各件と出力の確定状態を示します。詳細 CSV は10列＋「保護した列」を維持し、「処理」を「同名ファイルの採用結果」で絞り込めます。「相対パス」「入力元」「比較対象」「適用ルール」にそれぞれ出力パス・採用元・全不採用元（`; ` 区切り）・ルールを記録します。「判定」は走査の完了状態、「詳細」は出力の確定状態です。追加値にも既存の数式保護・復元規則が適用されます。TXT と画面は元表記です（TXT の改行・CR は既存規則どおりエスケープ）。
+
+## 統合先の選択 / Choosing the destination
+
+「統合先フォルダを選択…」/ `Choose Destination Folder…` で空のフォルダを直接選択します。標準の「新規フォルダ」/ `New Folder` で作成でき、追加階層は作りません。隠し項目を含め空である必要がありますが、`.DS_Store` は空判定で無視し、読みも削除もしません。統合先と入力の重複・入れ子は使えません。
+
+Choose the empty destination itself; create it with New Folder in the standard dialog if needed. No extra level is added. Hidden items count as contents except `.DS_Store`, which is ignored and kept untouched. Inputs and destination must not overlap or nest.
+
+統合先内の権限 0700 の一時フォルダで構築し、各項目を `RENAME_EXCL` で排他的に確定します。失敗時は移動済み項目を戻し、確定開始前のキャンセルも一時出力を片付けます。統合先自体と `.DS_Store`、他の処理が追加した項目を保持し、確定前の状態へ戻します。確定開始後のキャンセルは確定またはロールバックまで保留します。統合先の属性・権限は置き換えません。
+
+A private mode-0700 temporary folder inside the destination holds construction. Each item is published exclusively with RENAME_EXCL; failures roll published items back. Cancellation before publication cleans temporary output. The chosen folder, `.DS_Store`, and externally added items are preserved. Cancellation during publication is deferred until publication or rollback finishes.
+
+見出し下は待機中・終了後に現在のルール、統合中に開始時のルールを表示します。実行中の設定が異なる場合だけ「変更したルールは次回の統合から適用します」と案内します。実際の採用ルールは結果とログに残ります。
+
+The heading shows the current rule while idle and after completion, and the captured rule during a merge. “The changed rule will apply to the next merge.” appears only when the setting differs during a run. Results and logs retain the rule actually used.

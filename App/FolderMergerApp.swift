@@ -97,7 +97,6 @@ final class MergeModel: ObservableObject {
 
     @Published var inputs: [URL] = []
     @Published var destination: URL?
-    @Published var name = L("Merged Folder")
     @Published var validation = L("Select input folders and a destination.")
     @Published var busy = false
     @Published var status = ""
@@ -159,13 +158,13 @@ final class MergeModel: ObservableObject {
     }
 
     var request: MergeRequest? {
-        destination.map { MergeRequest(inputs: inputs, destination: $0, name: name, options: settings.options) }
+        destination.map { MergeRequest(inputs: inputs, output: $0, options: settings.options) }
     }
     func validate(clearOutput: Bool = true) {
         generation += 1
         let current = generation
         if clearOutput { output = nil }
-        guard let request else { validation = L("Select a destination parent folder."); return }
+        guard let request else { validation = L("Select an empty destination folder."); return }
         validation = L("Checking configuration…")
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let message: String
@@ -197,9 +196,17 @@ final class MergeModel: ObservableObject {
     func chooseDestination() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false; panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
         panel.prompt = L("Use as Destination")
-        panel.message = L("Select a destination parent folder.")
-        if panel.runModal() == .OK { destination = panel.url; validate() }
+        panel.message = L("Select an empty destination folder.")
+        if panel.runModal() == .OK {
+            destination = panel.url
+            validate()
+            if let destination {
+                do { try MergeEngine.validateDestination(destination) }
+                catch { validation = error.localizedDescription; errorMessage = error.localizedDescription }
+            }
+        }
     }
     func start() {
         guard !busy, validation.isEmpty, let request else { return }
@@ -275,11 +282,15 @@ struct ContentView: View {
         ScrollView {
         VStack(alignment: .leading, spacing: 14) {
             Text("Folder Merger").font(.largeTitle)
-            Text(L("When different files have the same path: %@ (applies to the next run)", settings.samePathPolicy.label))
             if model.busy, let plan = model.snapshot {
                 Text(L("Rule for this run: %@", plan.request.options.samePathPolicy.label)).bold()
+                if settings.samePathPolicy != plan.request.options.samePathPolicy {
+                    Text(L("The changed rule will apply to the next merge."))
+                }
+            } else {
+                Text(L("When different files have the same path: %@", settings.samePathPolicy.label))
             }
-            Text(L("Merge the contents of multiple folders into a new folder. Inputs remain unchanged."))
+            Text(L("Merge the contents of multiple folders into the chosen empty folder. Inputs remain unchanged."))
             GroupBox(L("Input folders (drop from Finder)")) {
                 VStack(alignment: .leading) {
                     List {
@@ -314,17 +325,12 @@ struct ContentView: View {
             }
             .disabled(model.busy)
             HStack {
-                Button(L("Choose Destination Parent Folder…"), action: model.chooseDestination)
+                Button(L("Choose Destination Folder…"), action: model.chooseDestination)
                 Text(model.destination?.path ?? L("Not selected")).textSelection(.enabled)
             }.disabled(model.busy)
-            TextField(L("Output folder name"), text: $model.name)
-                .textFieldStyle(.roundedBorder).disabled(model.busy)
-                .onChange(of: model.name) { _ in model.validate() }
-            Text(L("Output: %@", model.request?.output.path ?? L("Select a destination")))
-                .font(.callout).textSelection(.enabled)
             HStack {
                 Button(L("Merge"), action: model.start).keyboardShortcut(.defaultAction)
-                    .disabled(model.busy || !model.validation.isEmpty)
+                    .disabled(model.busy || model.destination == nil || !model.validation.isEmpty)
                 if model.busy { Button(L("Cancel"), action: model.cancel) }
                 if let output = model.output {
                     Button(L("Show in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([output]) }

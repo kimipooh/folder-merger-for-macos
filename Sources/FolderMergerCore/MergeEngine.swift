@@ -3,13 +3,11 @@ import Darwin
 
 public struct MergeRequest: Sendable {
     public var inputs: [URL]
-    public var destination: URL
-    public var name: String
+    public var output: URL
     public var options: MergeOptions
-    public init(inputs: [URL], destination: URL, name: String, options: MergeOptions = MergeOptions()) {
-        self.inputs = inputs; self.destination = destination; self.name = name; self.options = options
+    public init(inputs: [URL], output: URL, options: MergeOptions = MergeOptions()) {
+        self.inputs = inputs; self.output = output; self.options = options
     }
-    public var output: URL { destination.appendingPathComponent(name, isDirectory: true) }
 }
 
 public struct MergeProgress: Sendable {
@@ -61,17 +59,12 @@ public final class MergeEngine {
     private let chunkSize = 1_048_576
     // Tests inject a competing creation at the actual publication boundary.
     var beforeCommit: (() throws -> Void)?
+    var beforePublishItem: ((String, Int) throws -> Void)?
     // A narrow, injectable attribute syscall boundary. Return errno, or zero on success.
     var attributeOperation: (String, String, () -> Int32) -> Int32 = { _, _, operation in operation() }
     // Timestamp boundary allows testing incomparable metadata without corrupting fixtures.
     var modificationTime: (stat) -> FileModificationTime = { FileModificationTime($0.st_mtimespec) }
     public init() {}
-
-    public static func validName(_ name: String) -> Bool {
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        name != "." && name != ".." &&
-        !name.contains("/") && !name.contains(":") && !name.contains("\0")
-    }
 
     private static func info(_ url: URL, follow: Bool = false) throws -> stat {
         try info(path: url.path, follow: follow)
@@ -89,11 +82,6 @@ public final class MergeEngine {
         MergeError(L("%@: %@\n%@", localizedText(action), url.path, String(cString: strerror(code))))
     }
 
-    private static func exists(_ url: URL) -> Bool {
-        var value = stat()
-        return url.withUnsafeFileSystemRepresentation { lstat($0!, &value) == 0 }
-    }
-
     private static func ancestors(_ url: URL) throws -> Set<Identity> {
         var path = url.resolvingSymlinksInPath().standardizedFileURL
         var result = Set<Identity>()
@@ -109,16 +97,10 @@ public final class MergeEngine {
     // This is read-only and may also be used by the GUI before enabling Merge.
     public static func validate(_ request: MergeRequest) throws {
         guard !request.inputs.isEmpty else { throw MergeError(L("Add input folders.")) }
-        guard validName(request.name) else { throw MergeError(L("Enter a single folder name that is not blank and does not contain ., .., /, :, or NUL.")) }
-        let parent = try info(request.destination, follow: true)
-        guard parent.st_mode & S_IFMT == S_IFDIR else {
-            throw MergeError(L("Select a destination parent folder: %@", request.destination.path))
-        }
-        guard !exists(request.output) else {
-            throw MergeError(L("An item with this name already exists at the destination: %@", request.output.path))
-        }
+        try validateDestination(request.output)
+        let destinationID = Identity(try info(request.output))
         var roots: [(URL, Identity, Set<Identity>)] = []
-        let destinationAncestors = try ancestors(request.destination)
+        let destinationAncestors = try ancestors(request.output)
         for input in request.inputs {
             let value = try info(input, follow: true)
             guard value.st_mode & S_IFMT == S_IFDIR else { throw MergeError(L("The input is not a folder: %@", input.path)) }
@@ -129,8 +111,8 @@ public final class MergeEngine {
                     throw MergeError(L("Input folders overlap or are nested:\n%@\n%@", other.path, input.path))
                 }
             }
-            if destinationAncestors.contains(id) {
-                throw MergeError(L("The destination parent folder or output is inside an input:\n%@\n%@\n%@", input.path, request.destination.path, request.output.path))
+            if destinationAncestors.contains(id) || chain.contains(destinationID) {
+                throw MergeError(L("The destination and input overlap or are nested:\n%@\n%@", input.path, request.output.path))
             }
             roots.append((input, id, chain))
         }
@@ -141,10 +123,27 @@ public final class MergeEngine {
         }
     }
 
+    // Include hidden items; Finder's .DS_Store is neither read nor removed.
+    public static func validateDestination(_ output: URL) throws {
+        let value = try info(output)
+        guard value.st_mode & S_IFMT == S_IFDIR else {
+            throw MergeError(L("Select an existing destination folder, not a symbolic link: %@", output.path))
+        }
+        try checkEmpty(output)
+    }
+
+    private static func checkEmpty(_ output: URL, excluding temporary: String? = nil) throws {
+        let names = try FileManager.default.contentsOfDirectory(atPath: output.path)
+        guard names.allSatisfy({ $0 == ".DS_Store" || $0 == temporary }) else {
+            throw MergeError(L("Please choose an empty destination folder: %@", output.path))
+        }
+    }
+
     private static func normalizationInsensitive(at destination: URL, name: String) throws -> Bool {
         let probe = destination.appendingPathComponent(".foldermerger-probe-\(UUID().uuidString)")
         guard mkdir(probe.path, 0o700) == 0 else { throw systemError("Cannot create the temporary folder", probe) }
         func measure() throws -> Bool {
+            guard chmod(probe.path, 0o700) == 0 else { throw systemError("Cannot protect the temporary folder", probe) }
             let fd = open(probe.path + "/" + name.precomposedStringWithCanonicalMapping,
                           O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW, 0o600)
             guard fd >= 0 else { throw systemError("Cannot create the temporary folder", probe) }
@@ -200,6 +199,7 @@ public final class MergeEngine {
                          progress: (MergeProgress) -> Void) throws -> URL {
         context.emit(.phase, message: L("Validate and scan inputs"))
         try Self.validate(request)
+        let destinationIdentity = Identity(try Self.info(request.output))
         try cancellation.check()
         var plan: [Entry] = []
         // Probe the destination itself; never infer its behavior from Swift equality.
@@ -213,7 +213,7 @@ public final class MergeEngine {
                 let equivalent: Bool
                 if let cached = normalizationResults[bytes] { equivalent = cached }
                 else {
-                    equivalent = try Self.normalizationInsensitive(at: request.destination, name: raw)
+                    equivalent = try Self.normalizationInsensitive(at: request.output, name: raw)
                     normalizationResults[bytes] = equivalent
                 }
                 return equivalent ? canonical : raw
@@ -322,15 +322,13 @@ public final class MergeEngine {
         catch { publishDecisions(scanCompleted: false); throw error }
         publishDecisions(scanCompleted: true)
         try cancellation.check()
-        let temporary = request.destination.appendingPathComponent(".\(request.name).foldermerger-\(UUID().uuidString).tmp", isDirectory: true)
-        guard temporary.withUnsafeFileSystemRepresentation({ mkdir($0!, 0o777) }) == 0 else {
+        let temporary = request.output.appendingPathComponent(".foldermerger-\(UUID().uuidString).tmp", isDirectory: true)
+        guard temporary.withUnsafeFileSystemRepresentation({ mkdir($0!, 0o700) }) == 0 else {
             throw Self.systemError("Cannot create the temporary folder", temporary)
         }
-        // mkdir applies the process umask. Keep this default mode for publication,
-        // while restricting the unpublished construction tree to its owner.
         do {
-            let rootMode = try Self.info(temporary).st_mode & 0o777
-            guard temporary.withUnsafeFileSystemRepresentation({ chmod($0!, 0o700) }) == 0 else {
+            // Set the exact private mode even when umask removes owner bits.
+            guard chmod(temporary.path, 0o700) == 0 else {
                 throw Self.systemError("Cannot protect the temporary folder", temporary)
             }
             context.emit(.phase, message: L("Build in temporary folder"))
@@ -379,18 +377,53 @@ public final class MergeEngine {
             try cancellation.check()
             try beforeCommit?()
             try cancellation.check()
-            guard temporary.withUnsafeFileSystemRepresentation({ chmod($0!, rootMode) }) == 0 else {
-                throw Self.systemError("Cannot set output folder permissions", temporary)
+            guard Identity(try Self.info(request.output)) == destinationIdentity else {
+                throw MergeError(L("The destination folder changed during the merge: %@", request.output.path))
             }
+            try Self.checkEmpty(request.output, excluding: temporary.lastPathComponent)
+            // Anchor publication and rollback to the opened directories.
+            let destinationFD = open(request.output.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+            guard destinationFD >= 0 else { throw Self.systemError("Cannot inspect the item", request.output) }
+            defer { close(destinationFD) }
+            var destinationInfo = stat()
+            guard fstat(destinationFD, &destinationInfo) == 0, Identity(destinationInfo) == destinationIdentity else {
+                throw MergeError(L("The destination folder changed during the merge: %@", request.output.path))
+            }
+            let temporaryFD = open(temporary.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+            guard temporaryFD >= 0 else { throw Self.systemError("Cannot inspect the item", temporary) }
+            defer { close(temporaryFD) }
             context.emit(.phase, message: L("Finalize with RENAME_EXCL"))
-            let result = temporary.withUnsafeFileSystemRepresentation { source in
-                request.output.withUnsafeFileSystemRepresentation { target in
-                    renamex_np(source!, target!, UInt32(RENAME_EXCL))
+            let names = try FileManager.default.contentsOfDirectory(atPath: temporary.path).sorted()
+            var published: [(String, Identity)] = []
+            // Once publication starts, finish or roll back; cancellation is deferred.
+            do {
+                for (index, name) in names.enumerated() {
+                    try beforePublishItem?(name, index)
+                    let identity = Identity(try Self.info(path: temporary.path + "/" + name))
+                    guard renameatx_np(temporaryFD, name, destinationFD, name, UInt32(RENAME_EXCL)) == 0 else {
+                        throw Self.systemError("Cannot finalize the output (existing items are never overwritten)", request.output.appendingPathComponent(name))
+                    }
+                    published.append((name, identity))
                 }
+                // Remove the empty private construction folder before declaring success.
+                guard unlinkat(destinationFD, temporary.lastPathComponent, AT_REMOVEDIR) == 0 else {
+                    throw Self.systemError("Cannot remove the temporary folder", temporary)
+                }
+            } catch {
+                for (name, identity) in published.reversed() {
+                    var value = stat()
+                    guard fstatat(destinationFD, name, &value, AT_SYMLINK_NOFOLLOW) == 0,
+                          Identity(value) == identity,
+                          renameatx_np(destinationFD, name, temporaryFD, name, UInt32(RENAME_EXCL)) == 0 else {
+                        context.cleanupFailed = true
+                        throw MergeError(L("%@\nRollback could not restore an item: %@", error.localizedDescription, request.output.appendingPathComponent(name).path), cleanupFailed: true)
+                    }
+                }
+                throw error
             }
-            guard result == 0 else { throw Self.systemError("Cannot finalize the output (existing items are never overwritten)", request.output) }
             return request.output
         } catch {
+            if context.cleanupFailed { throw error }
             // All I/O is synchronous on this worker. File descriptors are closed before cleanup.
             do { try FileManager.default.removeItem(at: temporary) }
             catch let cleanupError {
@@ -649,7 +682,7 @@ public struct MergePlanDescription: Sendable {
                 L("Inputs remain unchanged and nothing is overwritten. Same-path folders are merged, including canonical Unicode equivalents when the destination treats them as identical. The first spelling and folder attributes are kept. Identical files are deduplicated; file attributes come from the selected file."),
                 L("Apply the selected rule only to different file contents. Newer-file priority stops on equal or incomparable modification dates. Stop on file/folder conflicts or other destination name collisions. Exclude .DS_Store at every level."),
                 L("Copy method: POSIX open/read/write (1 MiB chunks). No external commands."),
-                L("Create exclusively in a temporary folder on the same volume. Apply selected attributes only: contents → extended attributes → file permissions → modification date → creation date. Apply folder attributes after their children, deepest first. The output root is newly created."),
+                L("Create exclusively in a temporary folder on the same volume. Apply selected attributes only: contents → extended attributes → file permissions → modification date → creation date. Apply folder attributes after their children, deepest first. The chosen destination folder itself is preserved."),
                 L("Finalize with RENAME_EXCL only on success. Clean up the temporary folder on failure or cancellation. Unsupported attributes produce warnings; other errors stop the merge.")
             ]
         steps = lines.map { ExecutionStep(text: $0, arguments: nil) }

@@ -13,7 +13,7 @@ final class MergeLogTests: XCTestCase {
             try write(i, spelling + "/same.jpg", "identical")
             try write(i, spelling + "/different.jpg", "different-\(i)")
         }
-        let req = MergeRequest(inputs: inputs, destination: destination, name: "out")
+        let req = MergeRequest(inputs: inputs, output: destination)
         let log = MergeLog(request: req, detailed: false, language: "en")
         var screen = ConflictingFileDecisions()
         let result = MergeEngine().run(req, event: { if let d = $0.finalSelection { screen.append(d) } }, logEvent: log.record)
@@ -197,8 +197,13 @@ final class MergeLogTests: XCTestCase {
         for url in inputs + [destination!] { try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true) }
     }
     override func tearDownWithError() throws { try FileManager.default.removeItem(at: base) }
+    func clearOutput(_ output: URL) throws {
+        for url in try FileManager.default.contentsOfDirectory(at: output, includingPropertiesForKeys: nil) {
+            try FileManager.default.removeItem(at: url)
+        }
+    }
     func request(_ policy: SamePathPolicy = .later) -> MergeRequest {
-        MergeRequest(inputs: inputs, destination: destination, name: "out", options: MergeOptions(samePathPolicy: policy))
+        MergeRequest(inputs: inputs, output: destination, options: MergeOptions(samePathPolicy: policy))
     }
     func write(_ index: Int, _ name: String, _ value: String) throws {
         try Data(value.utf8).write(to: inputs[index].appendingPathComponent(name))
@@ -260,7 +265,7 @@ final class MergeLogTests: XCTestCase {
         try write(0, "same", "a"); try write(1, "same", "b")
         for mode in ["conflict", "validation", "cancel", "cleanup"] {
             let req = request(mode == "conflict" ? .stop : .later)
-            if mode == "validation" { try FileManager.default.createDirectory(at: req.output, withIntermediateDirectories: true) }
+            if mode == "validation" { try Data("occupied".utf8).write(to: req.output.appendingPathComponent("occupied")) }
             let token = CancellationToken(), engine = MergeEngine()
             if mode == "cancel" { engine.beforeCommit = { token.cancel() } }
             if mode == "cleanup" {
@@ -283,7 +288,7 @@ final class MergeLogTests: XCTestCase {
                 XCTAssertFalse(rows.contains { $0[1] == "Conflicting File Decisions" })
             }
             if mode == "cleanup" { XCTAssertTrue(txt.contains("cleanup failed")); XCTAssertTrue(result.cleanupFailed) }
-            if mode == "validation" { try FileManager.default.removeItem(at: req.output) }
+            if mode == "validation" { try clearOutput(req.output) }
         }
     }
     func testAll6100CopiesAreExportedAndTemporaryJournalIsRemoved() throws {
@@ -355,7 +360,7 @@ final class MergeLogTests: XCTestCase {
             XCTAssertTrue(rows.contains { $0[9].contains(language == "ja" ? "ログは不完全です" : "Incomplete log") })
             let txt = String(decoding: try exported(log, .txt), as: UTF8.self)
             XCTAssertTrue(txt.contains(language == "ja" ? "実行条件" : "Run conditions"))
-            if let output = result.output { try FileManager.default.removeItem(at: output) }
+            if let output = result.output { try clearOutput(output) }
         }
     }
 }
@@ -366,7 +371,7 @@ extension MergeLogTests {
             for i in 0..<3 { try write(i, "same", "different-\(i)"); try write(i, "identical", "identical") }
             try FileManager.default.createDirectory(at: inputs[0].appendingPathComponent("folder"), withIntermediateDirectories: true)
             let req = request(mode == "conflict" ? .stop : .later)
-            if mode == "validation" { try FileManager.default.createDirectory(at: req.output, withIntermediateDirectories: true) }
+            if mode == "validation" { try Data("occupied".utf8).write(to: req.output.appendingPathComponent("occupied")) }
             let log = MergeLog(request: req, detailed: false, language: "en")
             let engine = MergeEngine(), token = CancellationToken()
             if mode == "warnings" { engine.attributeOperation = { _, _, _ in ENOTSUP } }
@@ -407,7 +412,7 @@ extension MergeLogTests {
                     XCTAssertTrue(csv.contains { $0[1] == "Copied" }); XCTAssertTrue(csv.contains { $0[1] == "Created folder" })
                 }
             }
-            if FileManager.default.fileExists(atPath: req.output.path) { try FileManager.default.removeItem(at: req.output) }
+            try clearOutput(req.output)
         }
     }
 

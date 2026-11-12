@@ -37,24 +37,6 @@
       },
       "generatesSymbol": false
     },
-    "An item with this name already exists at the destination: %@": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "An item with this name already exists at the destination: %@"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "出力先に同名の項目が既に存在します: %@"
-          }
-        }
-      },
-      "generatesSymbol": false
-    },
     "Apply folder attributes (deepest first)": {
       "extractionState": "manual",
       "localizations": {
@@ -235,24 +217,6 @@
       },
       "generatesSymbol": false
     },
-    "Cannot protect the temporary folder": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cannot protect the temporary folder"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "一時フォルダを保護できません"
-          }
-        }
-      },
-      "generatesSymbol": false
-    },
     "Cannot read extended attributes": {
       "extractionState": "manual",
       "localizations": {
@@ -320,24 +284,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "属性 %@ を設定できません（相対パス: %@）"
-          }
-        }
-      },
-      "generatesSymbol": false
-    },
-    "Cannot set output folder permissions": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cannot set output folder permissions"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "出力フォルダの権限を設定できません"
           }
         }
       },
@@ -487,24 +433,6 @@
       },
       "generatesSymbol": false
     },
-    "Create exclusively in a temporary folder on the same volume. Apply selected attributes only: contents → extended attributes → file permissions → modification date → creation date. Apply folder attributes after their children, deepest first. The output root is newly created.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Create exclusively in a temporary folder on the same volume. Apply selected attributes only: contents → extended attributes → file permissions → modification date → creation date. Apply folder attributes after their children, deepest first. The output root is newly created."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "同一ボリュームの一時フォルダに排他的に作成。選択した属性のみ適用: 内容 → 拡張属性 → ファイル権限 → 変更日 → 作成日。フォルダ属性は子の完了後、深い順。出力ルートは新規作成。"
-          }
-        }
-      },
-      "generatesSymbol": false
-    },
     "Created folder": {
       "extractionState": "manual",
       "localizations": {
@@ -518,24 +446,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "フォルダ作成"
-          }
-        }
-      },
-      "generatesSymbol": false
-    },
-    "Enter a single folder name that is not blank and does not contain ., .., /, :, or NUL.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Enter a single folder name that is not blank and does not contain ., .., /, :, or NUL."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "出力名は空白だけにせず、.、..、/、:、NUL を使わない単一のフォルダ名にしてください。"
           }
         }
       },
@@ -757,24 +667,6 @@
       },
       "generatesSymbol": false
     },
-    "Select a destination parent folder: %@": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Select a destination parent folder: %@"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保存先親フォルダを選択してください: %@"
-          }
-        }
-      },
-      "generatesSymbol": false
-    },
     "Skipped identical file": {
       "extractionState": "manual",
       "localizations": {
@@ -824,24 +716,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "入力ルートのシンボリックリンクは使用できません: %@"
-          }
-        }
-      },
-      "generatesSymbol": false
-    },
-    "The destination parent folder or output is inside an input:\n%@\n%@\n%@": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The destination parent folder or output is inside an input:\n%@\n%@\n%@"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保存先親フォルダまたは出力先が入力内にあります:\n%@\n%@\n%@"
           }
         }
       },
@@ -1961,22 +1835,6 @@
         }
       }
     },
-    "When different files have the same path: %@ (applies to the next run)": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "When different files have the same path: %@ (applies to the next run)"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "同じ場所に内容の異なるファイルがある場合：%@（次回の実行に適用）"
-          }
-        }
-      }
-    },
     "Rule for this run: %@": {
       "localizations": {
         "en": {
@@ -2132,6 +1990,152 @@
         }
       },
       "generatesSymbol": false
+    },
+    "Create exclusively in a temporary folder on the same volume. Apply selected attributes only: contents → extended attributes → file permissions → modification date → creation date. Apply folder attributes after their children, deepest first. The chosen destination folder itself is preserved.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create exclusively in a temporary folder on the same volume. Apply selected attributes only: contents → extended attributes → file permissions → modification date → creation date. Apply folder attributes after their children, deepest first. The chosen destination folder itself is preserved."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同一ボリュームの一時フォルダに排他的に作成。選択した属性のみ適用: 内容 → 拡張属性 → ファイル権限 → 変更日 → 作成日。フォルダ属性は子の完了後、深い順。選択した統合先フォルダ自体は保持。"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Please choose an empty destination folder: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please choose an empty destination folder: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空のフォルダを選び直してください：%@"
+          }
+        }
+      }
+    },
+    "The destination folder changed during the merge: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The destination folder changed during the merge: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "統合中に統合先フォルダが変更されました：%@"
+          }
+        }
+      }
+    },
+    "%@\nRollback could not restore an item: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@\nRollback could not restore an item: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@\nロールバックで項目を元に戻せませんでした：%@"
+          }
+        }
+      }
+    },
+    "Cannot remove the temporary folder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cannot remove the temporary folder"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一時フォルダを削除できません"
+          }
+        }
+      }
+    },
+    "The destination and input overlap or are nested:\n%@\n%@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The destination and input overlap or are nested:\n%@\n%@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "統合先と入力が重複または入れ子になっています：\n%@\n%@"
+          }
+        }
+      }
+    },
+    "Select an existing destination folder, not a symbolic link: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select an existing destination folder, not a symbolic link: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シンボリックリンクではない既存の統合先フォルダを選択してください：%@"
+          }
+        }
+      }
+    },
+    "Cannot protect the temporary folder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cannot protect the temporary folder"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一時フォルダを保護できません"
+          }
+        }
+      }
+    },
+    "%@\nTemporary folder cleanup also failed: %@\n%@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@\nTemporary folder cleanup also failed: %@\n%@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@\n一時フォルダの後片付けにも失敗しました：%@\n%@"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

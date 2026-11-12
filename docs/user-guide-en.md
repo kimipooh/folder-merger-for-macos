@@ -4,7 +4,7 @@
 
 ## 1. Overview and preparation
 
-On macOS 13.0 or later, merge the contents of multiple folders into a new folder. Paths are relative to each input root; the root names are omitted. Inputs are never moved, renamed, or deleted, and existing outputs are never appended to or overwritten. Empty folders are included. No Release is available yet; [build from source](../README.md).
+On macOS 13.0 or later, merge the contents of multiple folders directly into a chosen empty destination folder. Paths are relative to each input root; the root names are omitted. Inputs are never moved, renamed, or deleted, and existing items are never overwritten. Empty folders are included. No Release is available yet; [build from source](../README.md).
 
 The app runs with your user permissions and App Sandbox disabled. macOS may require permission to access folders. Do not change inputs or the destination in other apps during a merge: no point-in-time snapshot of all inputs is created. Reading may update input access times.
 
@@ -39,15 +39,15 @@ Input roots cannot be symbolic links, duplicates, or nested within each other. I
 
 ## 3. Destination, execution, and result
 
-Use “Choose Destination Parent Folder…” to select a parent outside the inputs. Enter a new name in “Output folder name” and check the path after “Output:”. Whitespace-only names, `.`, `..`, and names containing `/`, `:`, or NUL are invalid. Choose another name if any item (including a link) already exists there.
+Use “Choose Destination Folder…” to choose an empty folder that neither overlaps nor contains/is contained by an input. Use the standard “New Folder” button to create one, and check the displayed path. Hidden files and subfolders count as contents; only `.DS_Store` is ignored and is neither read nor deleted. Merge is disabled until a valid empty folder is selected. Contents go directly into that folder, with no extra level or name field.
 
-When configuration errors are resolved, press “Merge”. Inputs, destination, and name cannot be edited during processing. Scanning, comparison, and copying run in the background. After completion, use “Show in Finder” to locate the output. Error text and paths can be selected and copied.
+When configuration errors are resolved, press “Merge”. Inputs and destination cannot be edited during processing. Scanning, comparison, and copying run in the background. After completion, use “Show in Finder” to locate the output. Error text and paths can be selected and copied.
 
 ## 4. Examples
 
-General example: inputs `Folder A/reports/a.txt` and `Folder B/reports/b.txt`, with output name `Combined` in another parent, produce `Combined/reports/a.txt` and `Combined/reports/b.txt`. The input root names are omitted.
+General example: inputs `Folder A/reports/a.txt` and `Folder B/reports/b.txt`, with an empty destination folder `Combined`, produce `Combined/reports/a.txt` and `Combined/reports/b.txt`. The input root names are omitted.
 
-Google Takeout example: add already extracted parts named `Takeout`, `Takeout 2`, and `Takeout 3`. Choose a parent outside the inputs and name the output `Takeout`. You need not rename the originals. All names below are synthetic.
+Google Takeout example: add already extracted parts named `Takeout`, `Takeout 2`, and `Takeout 3`. Choose an empty destination folder `Takeout` outside the inputs, without overlap or nesting. You need not rename the originals. All names below are synthetic.
 
 ```text
 Takeout/Google Photos/Album/IMG.jpg
@@ -77,7 +77,7 @@ Descriptions are always visible. Expand “Details” for technical names, Takeo
 
 Folder attributes at the same relative path come from the first input; file attributes come from the selected file. Attributes are not combined. An identical later candidate is skipped and the current selection retains its attributes. The output root does not inherit input-root dates, attributes, or permissions. Internal folder attributes are applied after children have been created.
 
-Disabled attributes are not explicitly copied from the source; OS creation values apply. Files with permissions disabled use 0666 filtered by umask; folders always use 0777 filtered by umask. Access times, owners, groups, and ACLs are not preserved.
+Disabled attributes are not explicitly copied from the source; OS creation values apply. Files with permissions disabled use 0666 filtered by umask; internal folders use 0777 filtered by umask. Access times, owners, groups, and ACLs are not copied from inputs. The chosen destination retains its own attributes, permissions, and ACL.
 
 The four options are saved in UserDefaults and restored after restarting. “Detailed per-file log” under “Log” is not saved and is always off at launch. Settings remain editable during a merge, but changes to attributes and detailed logging apply to the next merge. The running merge keeps its settings captured at start.
 
@@ -112,9 +112,9 @@ Folders at the same relative path are merged. Files are deduplicated only when s
 
 “Completed with warnings” means content copying finished but the destination did not support some attributes. Inspect the attribute warnings for paths, attributes, and reasons. “Failed” does not publish a completed output.
 
-“Cancel” is checked at scan, comparison, copy-chunk, and other boundaries. Controls become available after processing stops, files close, and temporary data is cleaned up. No completed output name remains. Cancelling after successful publication does not delete that output.
+“Cancel” is checked at scan, comparison, copy-chunk, and other boundaries. Controls become available after processing stops, files close, and temporary data is cleaned up. Before publication starts, cancellation restores the empty destination (keeping `.DS_Store`). Once publication starts, cancellation is deferred until publication or rollback finishes.
 
-The app builds in `.<output-name>.foldermerger-<UUID>.tmp` under the destination parent, then finalizes with a rename that never overwrites an existing item. Cleanup failures report the temporary path. Forced termination or power loss may leave it behind. Quit the app and confirm processing has stopped before manually removing that specific temporary folder.
+The app builds in `.foldermerger-<UUID>.tmp` (mode 0700) inside the destination, rechecks emptiness, then publishes each top-level item with exclusive `RENAME_EXCL`. On failure it rolls published items back and cleans its temporary output. Items added by another process, `.DS_Store`, and the destination itself are kept. The destination inode, creation date, permissions, ACL, and Finder tags are preserved; input-root attributes are not applied to it. Cleanup failures report the temporary path. Forced termination or power loss may leave it behind. Quit the app and confirm processing has stopped before manually removing that specific temporary folder.
 
 ## Saving the activity log
 
@@ -138,7 +138,7 @@ Records are incrementally journaled outside inputs/output and streamed during ex
 
 ## Conflicting File Decisions
 
-The numbered input list (1, 2, 3…) defines added-first / added-later order. The heading always shows the next run’s rule; during execution, “Rule for this run:” shows the captured rule. “Rule used for this result:” identifies the rule actually used even after Settings change. The new default is “Prefer the input folder added first”; explicitly saved choices, including “Stop the merge”, remain unchanged. Launch does not write a default preference.
+The numbered input list (1, 2, 3…) defines added-first / added-later order. The heading shows the current setting while idle and after completion. During execution, “Rule for this run:” shows the captured rule. Only when Settings differ from that captured rule does “The changed rule will apply to the next merge.” appear; it disappears when the run ends. “Rule used for this result:” identifies the rule actually used even after Settings change. The new default is “Prefer the input folder added first”; explicitly saved choices, including “Stop the merge”, remain unchanged. Launch does not write a default preference.
 
 “Conflicting File Decisions” is separate from chronological Activity Log, even with detailed logging off. It counts relative paths with differing contents, excluding identical-only skips. Each entry shows the output spelling, final selected input, inputs rejected by a content-based decision, and rule. Inputs skipped because their contents are identical are excluded from rejected inputs and remain visible in the chronological skip records. The screen retains at most 1,000 entries and shows the remaining count; saved logs contain all entries. The unrun and active-run states show no output-finalization note. Successful output shows “Decisions reflected in finalized output.” Failure and cancellation show “Output is not finalized. These are selection decisions only.” An interrupted scan shows decisions so far with “Scan incomplete; decisions so far only”.
 

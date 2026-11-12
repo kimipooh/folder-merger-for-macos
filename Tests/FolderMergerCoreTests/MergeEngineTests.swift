@@ -344,9 +344,39 @@ final class MergeEngineTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: output.appendingPathComponent("same")), data)
         XCTAssertEqual(try [snapshot(a), snapshot(b)], before)
     }
+
+    func testDecisionRejectsOnlyDifferentInputs() throws {
+        let roots = [a!, b!, base.appendingPathComponent("資料C")]
+        try fm.createDirectory(at: roots[2], withIntermediateDirectories: true)
+        // A, B, C where C equals selected B: identical C is a skip, not a rejection.
+        try write(roots[0], "same", Data("A".utf8))
+        try write(roots[1], "same", Data("B".utf8))
+        try write(roots[2], "same", Data("B".utf8))
+        var req = MergeRequest(inputs: roots, destination: parent, name: "later")
+        req.options.samePathPolicy = .later
+        var later: [ConflictingFileDecision] = []
+        _ = MergeEngine().run(req, event: { if let d = $0.finalSelection { later.append(d) } })
+        XCTAssertEqual(later.first?.selectedInput, roots[1])
+        XCTAssertEqual(later.first?.rejectedInputs, [roots[0]])
+
+        // A, A' (identical), B with the earlier policy: only B is rejected.
+        try fm.removeItem(at: roots[0].appendingPathComponent("same"))
+        try fm.removeItem(at: roots[1].appendingPathComponent("same"))
+        try fm.removeItem(at: roots[2].appendingPathComponent("same"))
+        try write(roots[0], "same", Data("A".utf8))
+        try write(roots[1], "same", Data("A".utf8))
+        try write(roots[2], "same", Data("B".utf8))
+        req = MergeRequest(inputs: roots, destination: parent, name: "earlier")
+        var earlier: [ConflictingFileDecision] = []
+        _ = MergeEngine().run(req, event: { if let d = $0.finalSelection { earlier.append(d) } })
+        XCTAssertEqual(earlier.first?.selectedInput, roots[0])
+        XCTAssertEqual(earlier.first?.rejectedInputs, [roots[2]])
+    }
+
     func testSameSizeSameMtimeDifferentBytesConflict() throws {
         try write(a, "same", Data("abc".utf8)); try write(b, "same", Data("abd".utf8))
-        try assertFailure(containing: ["same", a.path, b.path])
+        var req = request; req.options.samePathPolicy = .stop
+        try assertFailure(req, containing: ["same", a.path, b.path])
         XCTAssertFalse(fm.fileExists(atPath: request.output.path))
     }
     func testFileDirectoryConflict() throws {
@@ -490,7 +520,8 @@ final class MergeEngineTests: XCTestCase {
         try fm.removeItem(at: a.appendingPathComponent("Album"))
         try fm.removeItem(at: b.appendingPathComponent("album"))
         try write(a, ".hidden", Data([1])); try write(b, ".hidden", Data([2]))
-        try assertFailure(containing: [".hidden", a.path, b.path])
+        var req = request; req.options.samePathPolicy = .stop
+        try assertFailure(req, containing: [".hidden", a.path, b.path])
     }
 
     func testCleanupFailureReportsTemporaryPath() throws {
@@ -760,7 +791,8 @@ extension MergeEngineTests {
         XCTAssertFalse(fm.fileExists(atPath: request.output.path))
         try write(b, "file", Data([2]))
         events = []
-        let failed = MergeEngine().run(request, event: { events.append($0) })
+        var req = request; req.options.samePathPolicy = .stop
+        let failed = MergeEngine().run(req, event: { events.append($0) })
         XCTAssertEqual(failed.status, .failure)
         XCTAssertEqual(events.suffix(2).map(\.kind), [.error, .completed])
         XCTAssertEqual(failed.counters.errors, 1)
@@ -775,7 +807,7 @@ extension MergeEngineTests {
         req.name = "changed"
         XCTAssertEqual(snapshot.request.options, MergeOptions())
         XCTAssertNotEqual(snapshot.request.output, req.output)
-        XCTAssertTrue(snapshot.steps.contains { $0.text == L("%@: %@", L("When different files have the same path"), SamePathPolicy.stop.label) })
+        XCTAssertTrue(snapshot.steps.contains { $0.text == L("%@: %@", L("When different files have the same path"), SamePathPolicy.earlier.label) })
         XCTAssertTrue(MergePlanDescription(request: req).steps.contains { $0.text == L("%@: %@", L("When different files have the same path"), SamePathPolicy.later.label) })
         XCTAssertTrue(snapshot.steps.allSatisfy { $0.arguments == nil && !$0.text.contains("rsync") })
         XCTAssertTrue(snapshot.steps.contains { $0.text == L("%@: %@", L("Folder creation and modification dates"), L("Do not preserve")) })

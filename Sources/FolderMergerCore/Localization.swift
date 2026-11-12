@@ -17,7 +17,7 @@ func LC(_ key: String, _ count: Int64) -> String {
 
 public enum MergePreferences {
     public static func samePathPolicy(in defaults: UserDefaults) -> SamePathPolicy {
-        (defaults.string(forKey: "merge.samePathPolicy").flatMap(SamePathPolicy.init(rawValue:))) ?? .stop
+        (defaults.string(forKey: "merge.samePathPolicy").flatMap(SamePathPolicy.init(rawValue:))) ?? .earlier
     }
 
     public static func preserveExtendedAttributes(in defaults: UserDefaults) -> Bool {

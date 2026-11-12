@@ -12,6 +12,8 @@ public final class MergeLog: @unchecked Sendable {
     private let bundle: Bundle
     private let encoder = JSONEncoder()
     private var finished = false
+    private var outputFinalized = false
+    private var decisionCount = 0
 
     public init(request: MergeRequest, detailed: Bool, language: String? = nil,
                 temporaryDirectory: URL = FileManager.default.temporaryDirectory) {
@@ -53,7 +55,7 @@ public final class MergeLog: @unchecked Sendable {
         let action: String
         switch event.kind {
         case .fileSelected: action = "File selection"
-        case .finalSelection: action = "Final selected input"
+        case .finalSelection: action = "Conflicting File Decisions"
         case .conflict: action = "Conflicting items"
         case .skipped: action = "Skipped identical file"
         case .copied: action = "Copied"
@@ -63,6 +65,14 @@ public final class MergeLog: @unchecked Sendable {
         case .cancelled: action = "Cancelled"
         case .completed: action = "Completed"
         case .phase: action = "Phase"
+        }
+        if let decision = event.finalSelection {
+            decisionCount += 1
+            append([Self.time(event.timestamp), text(action), decision.relativePath, decision.selectedInput.path,
+                    decision.rejectedInputs.map(\.path).joined(separator: "; "),
+                    text(decision.scanCompleted ? "Scan complete" : "Scan incomplete; decisions so far only"),
+                    text(decision.policy.localizationKey), "", "", ""])
+            return
         }
         append([Self.time(event.timestamp), text(action), event.relativePath ?? "",
                 selection?.selectedInput.path ?? event.sourceInput?.path ?? "",
@@ -74,6 +84,7 @@ public final class MergeLog: @unchecked Sendable {
     }
     public func finish(_ result: MergeResult) {
         guard !finished else { return }
+        outputFinalized = result.output != nil
         let end = Date()
         let status: String
         switch result.status { case .success: status = "Completed"; case .warnings: status = "Completed with warnings"
@@ -110,6 +121,20 @@ public final class MergeLog: @unchecked Sendable {
             if format == .csv { try write(Self.csv(["", text("Warning"), "", "", "", "", "", "", "", warning])) }
             else { try write(warning + "\n") }
         }
+        let decisionState = text(outputFinalized ? "Decisions reflected in finalized output." : "Output is not finalized. These are selection decisions only.")
+        func readDecisions(_ body: ([String]) throws -> Void) throws {
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+            var pending = Data()
+            while let chunk = try handle.read(upToCount: 65536), !chunk.isEmpty {
+                pending.append(chunk)
+                while let newline = pending.firstIndex(of: 10) {
+                    let values = try JSONDecoder().decode([String].self, from: Data(pending[..<newline]))
+                    pending.removeSubrange(...newline)
+                    if values[1] == text("Conflicting File Decisions") { try body(values) }
+                }
+            }
+        }
         let input: FileHandle
         do { input = try FileHandle(forReadingFrom: url) }
         catch {
@@ -123,13 +148,27 @@ public final class MergeLog: @unchecked Sendable {
         defer { try? input.close() }
         var buffer = Data()
         var section = text("Run conditions")
+        var wroteDecisions = false
+        func txtRow(_ values: [String]) throws {
+            try write(zip(headings, values).filter { !$0.1.isEmpty }.map { $0.0 + ": " + $0.1.replacingOccurrences(of: "\r", with: "\\r").replacingOccurrences(of: "\n", with: "\\n") }.joined(separator: " | ") + "\n")
+        }
         func row(_ data: Data) throws {
-            let values = try JSONDecoder().decode([String].self, from: data)
-            if format == .csv { try write(Self.csv(values)); return }
+            var values = try JSONDecoder().decode([String].self, from: data)
+            if format == .csv {
+                if values[1] == text("Conflicting File Decisions") { values[9] = decisionState }
+                try write(Self.csv(values)); return
+            }
+            if values[1] != text("Run conditions"), !wroteDecisions {
+                wroteDecisions = true
+                try write("\n" + text("Conflicting File Decisions") + "\n" + String(format: text("Conflicting paths: %lld"), decisionCount) + "\n" + decisionState + "\n")
+                try readDecisions { try txtRow($0) }
+                section = text("Conflicting File Decisions")
+            }
+            if values[1] == text("Conflicting File Decisions") { return }
             let next = values[1] == text("Run conditions") ? text("Run conditions") : values[1] == text("Final result") ? text("Final result") : text("Activity log (chronological)")
             if next != section { section = next; try write("\n" + section + "\n") }
             // Keep each event on one physical TXT line even for unusual filenames.
-            try write(zip(headings, values).filter { !$0.1.isEmpty }.map { $0.0 + ": " + $0.1.replacingOccurrences(of: "\r", with: "\\r").replacingOccurrences(of: "\n", with: "\\n") }.joined(separator: " | ") + "\n")
+            try txtRow(values)
         }
         while let chunk = try input.read(upToCount: 65536), !chunk.isEmpty {
             buffer.append(chunk)

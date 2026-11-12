@@ -1135,36 +1135,36 @@
       "extractionState": "manual",
       "generatesSymbol": false
     },
-    "Prefer the earlier folder in the input list": {
+    "Prefer the input folder added first": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Prefer the earlier folder in the input list"
+            "value": "Prefer the input folder added first"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "入力一覧で先のフォルダを優先"
+            "value": "先に追加した入力フォルダを優先"
           }
         }
       },
       "extractionState": "manual",
       "generatesSymbol": false
     },
-    "Prefer the later folder in the input list": {
+    "Prefer the input folder added later": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Prefer the later folder in the input list"
+            "value": "Prefer the input folder added later"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "入力一覧で後のフォルダを優先"
+            "value": "後に追加した入力フォルダを優先"
           }
         }
       },
@@ -1249,6 +1249,182 @@
           "stringUnit": {
             "state": "translated",
             "value": "ログを保存できませんでした"
+          }
+        }
+      }
+    },
+    "Conflicting File Decisions": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conflicting File Decisions"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同名ファイルの採用結果"
+          }
+        }
+      }
+    },
+    "Conflicting paths: %lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conflicting paths: %lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "採用判断があった相対パス: %lld 件"
+          }
+        }
+      }
+    },
+    "Decisions reflected in finalized output.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Decisions reflected in finalized output."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "採用結果は確定した出力に反映されています。"
+          }
+        }
+      }
+    },
+    "Output is not finalized. These are selection decisions only.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Output is not finalized. These are selection decisions only."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出力は確定していません。以下は採用判断です。"
+          }
+        }
+      }
+    },
+    "Scan complete": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan complete"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "走査完了"
+          }
+        }
+      }
+    },
+    "Scan incomplete; decisions so far only": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan incomplete; decisions so far only"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "走査未完了のため、判断済み分のみ表示しています"
+          }
+        }
+      }
+    },
+    "Path: %@ | Selected: %@ | Rejected: %@ | Rule: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Path: %@ | Selected: %@ | Rejected: %@ | Rule: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相対パス: %@ | 採用元: %@ | 不採用元: %@ | ルール: %@"
+          }
+        }
+      }
+    },
+    "When different files have the same path: %@ (applies to the next run)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When different files have the same path: %@ (applies to the next run)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同じ場所に内容の異なるファイルがある場合：%@（次回の実行に適用）"
+          }
+        }
+      }
+    },
+    "Rule for this run: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rule for this run: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この実行のルール：%@"
+          }
+        }
+      }
+    },
+    "Rule used for this result: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rule used for this result: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この結果に使用したルール：%@"
+          }
+        }
+      }
+    },
+    "%lld more decisions (all included in saved logs)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld more decisions (all included in saved logs)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほか %lld 件（保存ログに全件）"
           }
         }
       }

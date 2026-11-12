@@ -13,13 +13,13 @@ final class LocalizationTests: XCTestCase {
 
     func testSamePathPolicyDefaultsAndSavedValues() {
         withDefaults { defaults in
-            XCTAssertEqual(MergeOptions().samePathPolicy, .stop)
-            XCTAssertEqual(MergePreferences.samePathPolicy(in: defaults), .stop)
+            XCTAssertEqual(MergeOptions().samePathPolicy, .earlier)
+            XCTAssertEqual(MergePreferences.samePathPolicy(in: defaults), .earlier)
             XCTAssertNil(defaults.object(forKey: "merge.samePathPolicy"))
             defaults.set("invalid", forKey: "merge.samePathPolicy")
-            XCTAssertEqual(MergePreferences.samePathPolicy(in: defaults), .stop)
+            XCTAssertEqual(MergePreferences.samePathPolicy(in: defaults), .earlier)
             defaults.set(42, forKey: "merge.samePathPolicy")
-            XCTAssertEqual(MergePreferences.samePathPolicy(in: defaults), .stop)
+            XCTAssertEqual(MergePreferences.samePathPolicy(in: defaults), .earlier)
             for policy in SamePathPolicy.allCases {
                 defaults.set(policy.rawValue, forKey: "merge.samePathPolicy")
                 XCTAssertEqual(MergePreferences.samePathPolicy(in: defaults), policy)

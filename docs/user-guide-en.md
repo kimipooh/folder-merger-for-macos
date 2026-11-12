@@ -83,12 +83,12 @@ The four options are saved in UserDefaults and restored after restarting. “Det
 
 “When different files have the same path” offers four choices:
 
-- “Stop the merge” (default)
-- “Prefer the earlier folder in the input list”
-- “Prefer the later folder in the input list”
+- “Stop the merge”
+- “Prefer the input folder added first” (default)
+- “Prefer the input folder added later”
 - “Prefer the file with the newer modification date”
 
-The choice persists across launches; missing or invalid values use “Stop the merge”. With three or more inputs, compare the current selection with each next candidate in input-list order. Skip identical contents; apply the rule only to different contents. Newer-file priority compares input modification dates to nanosecond precision. Equal or incomparable dates stop the merge with the relative path, both inputs, and the reason. The rule is captured at start; changes during execution apply to the next merge.
+The choice persists across launches; missing or invalid values use “Prefer the input folder added first”. With three or more inputs, compare the current selection with each next candidate in input-list order. Skip identical contents; apply the rule only to different contents. Newer-file priority compares input modification dates to nanosecond precision. Equal or incomparable dates stop the merge with the relative path, both inputs, and the reason. The rule is captured at start; changes during execution apply to the next merge.
 
 ## 6. File contents and Mac metadata
 
@@ -120,7 +120,7 @@ The app builds in `.<output-name>.foldermerger-<UUID>.tmp` under the destination
 
 After a run, choose **Save Log…** in Activity Log to export the previous run as CSV or TXT. The button is disabled before the first run and while running. Completed, completed with warnings, failed, cancelled, and validation failures at run start can be exported. Choose the format, filename, and location in the save panel. The default name includes a timestamp; switching formats changes the extension. Standard save-panel confirmation controls replacement. An alert explains save failures.
 
-CSV uses UTF-8 with BOM and RFC 4180 CRLF records. Columns are Time, Action, Relative Path, Input, Compared With, Decision, Applied Rule, Input Modified, Compared Modified, Details, Protected columns. Input identifies the selected side or recorded item; Compared With identifies the rejected side (the previously selected side for identical-file skips). Relative Path uses the output spelling. A Final selected input row identifies the ultimate winner even with three or more inputs. Newer-file decisions include both modification dates with nine fractional digits and the machine local UTC offset. Event times use ISO 8601 with nine fractional digits and the machine local UTC offset, including daylight-saving changes. Final-selection rows are recorded only after scanning completes, so scan failure or cancellation produces none. TXT uses UTF-8 without BOM and LF, ordered as Run conditions → Activity log (chronological) → Final result. Embedded path line breaks appear as `\r` and `\n` in TXT.
+CSV uses UTF-8 with BOM and RFC 4180 CRLF records. Columns are Time, Action, Relative Path, Input, Compared With, Decision, Applied Rule, Input Modified, Compared Modified, Details, Protected columns. Input identifies the selected side or recorded item; Compared With identifies the rejected side (the previously selected side for identical-file skips). Relative Path uses the output spelling. A Conflicting File Decisions row identifies the ultimate winner even with three or more inputs. Newer-file decisions include both modification dates with nine fractional digits and the machine local UTC offset. Event times use ISO 8601 with nine fractional digits and the machine local UTC offset, including daylight-saving changes. Decision rows are emitted after scanning; interrupted scans emit only decisions so far, marked incomplete. TXT uses UTF-8 without BOM and LF, ordered as Run conditions → Conflicting File Decisions → Activity log (chronological) → Final result. Embedded path line breaks appear as `\r` and `\n` in TXT.
 
 CSV prefixes one apostrophe (`'`) to values starting with `=`, `+`, `-`, `@`, TAB, CR, LF, or fullwidth `＝`, `＋`, `－`, `＠` to prevent spreadsheet formula interpretation. This also applies when Unicode whitespace, line separators, control characters, or format characters (such as zero-width characters) precede those characters. Values already starting with an apostrophe remain unchanged. TXT and the on-screen log retain their original text.
 
@@ -129,3 +129,11 @@ The final **Protected columns** column lists modified columns in column order us
 Exports include ordered inputs, planned output, all four attribute settings, same-path rule, detailed-log setting, start/end times, status and counters. Failed/cancelled runs explicitly state that output was not finalized and whether temporary-output cleanup failed; successful runs identify the finalized output. Selection decisions, final selections, identical-file skips, conflicts, warnings, errors and cancellation are recorded even with Detailed per-file log off. Individual copies and folder creation follow that setting. Export includes records beyond the screen's 5000-line limit.
 
 Records are written incrementally to a temporary location outside inputs and output, then streamed during export. The temporary log is deleted at the next run and on app exit. Recording failure does not stop merging; exports show Incomplete log and the reason. Logs contain input paths; consider this when sharing. Logs are never automatically saved into inputs or bundled with merged output.
+
+## Conflicting File Decisions
+
+The numbered input list (1, 2, 3…) defines added-first / added-later order. The heading always shows the next run’s rule; during execution, “Rule for this run:” shows the captured rule. “Rule used for this result:” identifies the rule actually used even after Settings change. The new default is “Prefer the input folder added first”; explicitly saved choices, including “Stop the merge”, remain unchanged. Launch does not write a default preference.
+
+“Conflicting File Decisions” is separate from chronological Activity Log, even with detailed logging off. It counts relative paths with differing contents, excluding identical-only skips. Each entry shows the output spelling, final selected input, inputs rejected by a content-based decision, and rule. Inputs skipped because their contents are identical are excluded from rejected inputs and remain visible in the chronological skip records. The screen retains at most 1,000 entries and shows the remaining count; saved logs contain all entries. The unrun and active-run states show no output-finalization note. Successful output shows “Decisions reflected in finalized output.” Failure and cancellation show “Output is not finalized. These are selection decisions only.” An interrupted scan shows decisions so far with “Scan incomplete; decisions so far only”.
+
+TXT places this section after Run conditions and before chronological events. CSV keeps its 10 columns plus Protected columns: filter Action by “Conflicting File Decisions”. Relative Path, Input, Compared With, and Applied Rule contain the path, selected input, inputs rejected by content-based decisions joined by `; `, and rule. Decision indicates scan completeness; Details indicates output finalization. Each added value uses the same formula protection and restoration rules described above.

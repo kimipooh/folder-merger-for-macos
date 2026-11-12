@@ -112,6 +112,8 @@ final class MergeModel: ObservableObject {
     @Published var warnings: [AttributeWarning] = []
     @Published var currentItem = ""
     @Published var finalStatus = ""
+    @Published var decisions = ConflictingFileDecisions()
+    @Published var decisionOutputFinalized = false
     var nextPlan: MergePlanDescription? { request.map(MergePlanDescription.init) }
     func appendLogs(_ lines: [String], omitted: Int) {
         logLines.append(contentsOf: lines)
@@ -195,6 +197,7 @@ final class MergeModel: ObservableObject {
         savedLog = nil; canSaveLog = false
         busy = true; errorMessage = ""; output = nil; completed = 0; total = 0; status = L("Preparing…")
         snapshot = MergePlanDescription(request: request)
+        decisions = ConflictingFileDecisions(); decisionOutputFinalized = false
         logLines = []; omittedLines = 0; counters = MergeCounters(); warnings = []; finalStatus = ""; currentItem = ""
         let detailed = settings.detailedLog
         let journal = MergeLog(request: request, detailed: detailed)
@@ -203,6 +206,7 @@ final class MergeModel: ObservableObject {
         cancellation = token
         DispatchQueue.global(qos: .userInitiated).async {
             // This buffer belongs to the serial worker; only batches cross to the main queue.
+            var decisions = ConflictingFileDecisions()
             var lines: [String] = []
             var omitted = 0
             var latest: MergeProgress?
@@ -210,10 +214,11 @@ final class MergeModel: ObservableObject {
             var lastFlush = Date.distantPast
             func flush(force: Bool = false) {
                 guard force || Date().timeIntervalSince(lastFlush) >= 0.15 else { return }
-                let batch = lines, dropped = omitted, p = latest, e = latestEvent
+                let batch = lines, dropped = omitted, p = latest, e = latestEvent, decisionSnapshot = decisions
                 lines.removeAll(keepingCapacity: true); omitted = 0; latest = nil; latestEvent = nil
                 lastFlush = Date()
                 DispatchQueue.main.async {
+                    self.decisions = decisionSnapshot
                     self.appendLogs(batch, omitted: dropped)
                     if let e { self.status = e.message; self.counters = e.counters }
                     if let p {
@@ -224,7 +229,8 @@ final class MergeModel: ObservableObject {
                 }
             }
             let result = MergeEngine().run(request, cancellation: token, detailedLog: detailed, event: { e in
-                if lines.count < 5000 { lines.append(e.line) } else { omitted += 1 }
+                if let decision = e.finalSelection { decisions.append(decision) }
+                else if lines.count < 5000 { lines.append(e.line) } else { omitted += 1 }
                 latestEvent = e
                 flush()
             }, logEvent: { journal.record($0) }, progress: { p in latest = p; flush() })
@@ -233,6 +239,7 @@ final class MergeModel: ObservableObject {
             DispatchQueue.main.async {
                 self.savedLog = journal; self.canSaveLog = true
                 self.busy = false; self.cancellation = nil
+                self.decisionOutputFinalized = result.output != nil
                 self.output = result.output; self.counters = result.counters; self.warnings = result.warnings
                 self.finalStatus = result.status.label; self.status = result.status.label
                 self.errorMessage = result.status == .failure ? (result.error?.localizedDescription ?? L("Failed")) : ""
@@ -259,12 +266,17 @@ struct ContentView: View {
         ScrollView {
         VStack(alignment: .leading, spacing: 14) {
             Text("Folder Merger").font(.largeTitle)
+            Text(L("When different files have the same path: %@ (applies to the next run)", settings.samePathPolicy.label))
+            if model.busy, let plan = model.snapshot {
+                Text(L("Rule for this run: %@", plan.request.options.samePathPolicy.label)).bold()
+            }
             Text(L("Merge the contents of multiple folders into a new folder. Inputs remain unchanged."))
             GroupBox(L("Input folders (drop from Finder)")) {
                 VStack(alignment: .leading) {
                     List {
                         ForEach(Array(model.inputs.enumerated()), id: \.offset) { index, url in
                             HStack {
+                                Text("\(index + 1).")
                                 VStack(alignment: .leading) {
                                     Text(url.lastPathComponent).bold()
                                     Text(url.path).font(.caption).textSelection(.enabled)
@@ -340,7 +352,30 @@ struct ContentView: View {
                             Text((model.warnings.prefix(1000).map { L("%@: %@: %@", $0.relativePath, $0.displayName, $0.reason) } + (model.warnings.count > 1000 ? [LC("%lld additional warnings", model.warnings.count - 1000)] : [])).joined(separator: "\n")).textSelection(.enabled)
                         }
                     }
+                    GroupBox(L("Conflicting File Decisions")) {
+                        VStack(alignment: .leading) {
+                            Text(L("Conflicting paths: %lld", model.decisions.count))
+                            if model.decisionOutputFinalized {
+                                Text(L("Decisions reflected in finalized output."))
+                            } else if model.snapshot != nil && !model.busy {
+                                Text(L("Output is not finalized. These are selection decisions only."))
+                            }
+                            if model.decisions.items.contains(where: { !$0.scanCompleted }) {
+                                Text(L("Scan incomplete; decisions so far only"))
+                            }
+                            ScrollView {
+                                Text(model.decisions.items.map(\.description).joined(separator: "\n"))
+                                    .font(.caption).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                            }.frame(maxHeight: 160)
+                            if model.decisions.omitted > 0 {
+                                Text(L("%lld more decisions (all included in saved logs)", model.decisions.omitted))
+                            }
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     Text(model.finalStatus).bold()
+                    if !model.finalStatus.isEmpty, let plan = model.snapshot {
+                        Text(L("Rule used for this result: %@", plan.request.options.samePathPolicy.label))
+                    }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
             if !model.validation.isEmpty { Text(model.validation).foregroundStyle(.secondary).textSelection(.enabled) }

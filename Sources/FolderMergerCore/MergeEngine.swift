@@ -50,6 +50,7 @@ private struct Identity: Hashable {
 private struct Entry {
     var relative: String
     var hadDecision = false
+    var rejectedInputs: [URL] = []
     let source: String
     let root: URL
     let info: stat
@@ -294,6 +295,7 @@ public final class MergeEngine {
                             selected.relative = previous.relative
                             let rejected = useNext ? previous : entry
                             context.decision(selected: selected, rejected: rejected, policy: policy)
+                            selected.rejectedInputs = previous.rejectedInputs + [rejected.root]
                             selected.hadDecision = true
                             plan[index] = selected
                         }
@@ -307,10 +309,18 @@ public final class MergeEngine {
                 if entry.directory { try scan(url, root: root, prefix: plan[paths[key]!].relative) }
             }
         }
-        for input in request.inputs { try scan(input.path, root: input, prefix: "") }
-        for entry in plan where entry.hadDecision {
-            context.emit(.finalSelection, relative: entry.relative, source: entry.root, message: L("Final selected input"), screen: false)
+        func publishDecisions(scanCompleted: Bool) {
+            for entry in plan where entry.hadDecision {
+                let decision = ConflictingFileDecision(relativePath: entry.relative, selectedInput: entry.root,
+                    rejectedInputs: entry.rejectedInputs, policy: request.options.samePathPolicy, scanCompleted: scanCompleted)
+                context.deliver(MergeEvent(timestamp: Date(), kind: .finalSelection, relativePath: entry.relative,
+                    sourceInput: entry.root, bytes: nil, attribute: nil, reason: nil, message: L("Conflicting File Decisions"),
+                    counters: context.counters, selection: nil, finalSelection: decision))
+            }
         }
+        do { for input in request.inputs { try scan(input.path, root: input, prefix: "") } }
+        catch { publishDecisions(scanCompleted: false); throw error }
+        publishDecisions(scanCompleted: true)
         try cancellation.check()
         let temporary = request.destination.appendingPathComponent(".\(request.name).foldermerger-\(UUID().uuidString).tmp", isDirectory: true)
         guard temporary.withUnsafeFileSystemRepresentation({ mkdir($0!, 0o777) }) == 0 else {
@@ -503,8 +513,8 @@ public enum SamePathPolicy: String, Sendable, CaseIterable {
     public var localizationKey: String {
         switch self {
         case .stop: return "Stop the merge"
-        case .earlier: return "Prefer the earlier folder in the input list"
-        case .later: return "Prefer the later folder in the input list"
+        case .earlier: return "Prefer the input folder added first"
+        case .later: return "Prefer the input folder added later"
         case .newer: return "Prefer the file with the newer modification date"
         }
     }
@@ -536,7 +546,7 @@ public struct MergeOptions: Sendable, Equatable {
     public var filePermissions: Bool
     public var directoryDates: Bool
     public var extendedAttributes: Bool
-    public init(fileDates: Bool = true, filePermissions: Bool = true, directoryDates: Bool = false, extendedAttributes: Bool = true, samePathPolicy: SamePathPolicy = .stop) {
+    public init(fileDates: Bool = true, filePermissions: Bool = true, directoryDates: Bool = false, extendedAttributes: Bool = true, samePathPolicy: SamePathPolicy = .earlier) {
         self.samePathPolicy = samePathPolicy
         self.fileDates = fileDates; self.filePermissions = filePermissions
         self.directoryDates = directoryDates; self.extendedAttributes = extendedAttributes
@@ -589,6 +599,7 @@ public struct MergeEvent: Sendable {
     public let counters: MergeCounters
     public let selection: FileSelection?
     public var comparedInput: URL? = nil
+    public var finalSelection: ConflictingFileDecision? = nil
     public var line: String {
         L("%@ %@%@%@%@", timestamp.formatted(date: .omitted, time: .standard), message,
           relativePath.map { L(" %@", $0) } ?? "",

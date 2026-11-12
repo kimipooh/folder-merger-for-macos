@@ -3,6 +3,111 @@ import Darwin
 @testable import FolderMergerCore
 
 final class MergeLogTests: XCTestCase {
+    func testTakeoutDefaultDecisionsAndBoundedScreen() throws {
+        inputs = (1...3).map { base.appendingPathComponent("takeout-00\($0)") }
+        let folder = "Takeout/Google フォト/アルバム"
+        for (i, root) in inputs.enumerated() {
+            let spelling = i == 1 ? folder.decomposedStringWithCanonicalMapping : folder
+            try FileManager.default.createDirectory(atPath: root.path + "/" + spelling, withIntermediateDirectories: true)
+            try write(i, spelling + "/only-\(i).jpg", "unique-\(i)")
+            try write(i, spelling + "/same.jpg", "identical")
+            try write(i, spelling + "/different.jpg", "different-\(i)")
+        }
+        let req = MergeRequest(inputs: inputs, destination: destination, name: "out")
+        let log = MergeLog(request: req, detailed: false, language: "en")
+        var screen = ConflictingFileDecisions()
+        let result = MergeEngine().run(req, event: { if let d = $0.finalSelection { screen.append(d) } }, logEvent: log.record)
+        log.finish(result)
+        XCTAssertEqual(result.status, .success)
+        XCTAssertEqual(screen.count, 1)
+        let decision = try XCTUnwrap(screen.items.first)
+        XCTAssertEqual(decision.selectedInput, inputs[0])
+        XCTAssertEqual(decision.rejectedInputs, Array(inputs.dropFirst()))
+        XCTAssertEqual(decision.policy, .earlier)
+        XCTAssertTrue(decision.scanCompleted)
+        XCTAssertEqual(result.counters.skipped, 2)
+        let out = try XCTUnwrap(result.output)
+        for i in 0..<3 { XCTAssertTrue(FileManager.default.fileExists(atPath: out.path + "/" + folder + "/only-\(i).jpg")) }
+        XCTAssertEqual(try String(contentsOf: out.appendingPathComponent(folder + "/different.jpg")), "different-0")
+        let rows = try parse(exported(log, .csv)).filter { $0[1] == "Conflicting File Decisions" }
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows[0][2], decision.relativePath)
+        XCTAssertEqual(rows[0][3], decision.selectedInput.path)
+        XCTAssertEqual(rows[0][4], decision.rejectedInputs.map(\.path).joined(separator: "; "))
+        XCTAssertEqual(rows[0][6], "Prefer the input folder added first")
+        XCTAssertTrue(rows[0][9].contains("finalized output"))
+        let txt = String(decoding: try exported(log, .txt), as: UTF8.self)
+        XCTAssertTrue(txt.contains("Conflicting paths: 1"))
+        XCTAssertTrue(txt.contains("Relative Path: " + decision.relativePath))
+        XCTAssertLessThan(try XCTUnwrap(txt.range(of: "\nConflicting File Decisions\n")).lowerBound,
+                          try XCTUnwrap(txt.range(of: "\nActivity log (chronological)\n")).lowerBound)
+
+        // Every record is journaled, while the screen model retains at most 1,000.
+        let many = MergeLog(request: req, detailed: false, language: "en")
+        var bounded = ConflictingFileDecisions()
+        for _ in 0..<1007 {
+            bounded.append(decision)
+            many.record(MergeEvent(timestamp: Date(), kind: .finalSelection, relativePath: decision.relativePath,
+                sourceInput: decision.selectedInput, bytes: nil, attribute: nil, reason: nil, message: "",
+                counters: MergeCounters(), selection: nil, finalSelection: decision))
+        }
+        many.finish(result)
+        XCTAssertEqual(bounded.count, 1007); XCTAssertEqual(bounded.items.count, 1000); XCTAssertEqual(bounded.omitted, 7)
+        XCTAssertEqual(try parse(exported(many, .csv)).filter { $0[1] == "Conflicting File Decisions" }.count, 1007)
+        XCTAssertTrue(String(decoding: try exported(many, .txt), as: UTF8.self).contains("Conflicting paths: 1007"))
+    }
+
+    func testDecisionProtectionAndRestoration() throws {
+        for lead in ["=", "+", "-", "@", "\t", "\r", "\n", "＝", "＋", "－", "＠"] {
+            let req = request(), log = MergeLog(request: req, detailed: false, language: "en")
+            let selected = URL(string: lead + "selected") ?? URL(fileURLWithPath: "/synthetic")
+            // Relative input URLs exercise dangerous leading input/compared cells as well as paths.
+            let decision = ConflictingFileDecision(relativePath: lead + "photo.jpg", selectedInput: selected,
+                rejectedInputs: [selected], policy: .earlier, scanCompleted: true)
+            log.record(MergeEvent(timestamp: Date(), kind: .finalSelection, relativePath: decision.relativePath,
+                sourceInput: selected, bytes: nil, attribute: nil, reason: nil, message: "", counters: MergeCounters(),
+                selection: nil, finalSelection: decision))
+            log.finish(MergeResult(status: .failure, output: nil, counters: MergeCounters(), warnings: [], error: MergeError("synthetic")))
+            let row = try XCTUnwrap(parse(exported(log, .csv)).first { $0[1] == "Conflicting File Decisions" })
+            XCTAssertTrue(row[10].contains("relative_path"))
+            for (index, original) in [(2, decision.relativePath), (3, selected.path), (4, selected.path)] {
+                let protected = row[10].split(separator: ";").contains(Substring(MergeLog.csvColumnIdentifiers[index]))
+                XCTAssertEqual(protected ? String(row[index].dropFirst()) : row[index], original)
+                XCTAssertEqual(protected, MergeLog.needsCSVProtection(original))
+            }
+            XCTAssertTrue(row[9].contains("Output is not finalized"))
+            let txt = String(decoding: try exported(log, .txt), as: UTF8.self)
+            XCTAssertTrue(txt.contains(decision.relativePath.replacingOccurrences(of: "\r", with: "\\r").replacingOccurrences(of: "\n", with: "\\n")))
+        }
+    }
+
+    func testInterruptedScanAndConstructionDecisionsRemainUnfinalized() throws {
+        try write(0, "same", "a"); try write(1, "same", "b"); try write(2, "same", "c")
+        for mode in ["scan", "build", "cancel"] {
+            let req = request(.later), engine = MergeEngine(), token = CancellationToken()
+            let log = MergeLog(request: req, detailed: false, language: "en")
+            var decisions: [ConflictingFileDecision] = []
+            let result = engine.run(req, cancellation: token, event: { e in
+                if let d = e.finalSelection { decisions.append(d) }
+                if mode == "scan", e.kind == .fileSelected { token.cancel() }
+                if e.kind == .phase, e.message == L("Build in temporary folder") {
+                    if mode == "cancel" { token.cancel() }
+                    if mode == "build" { try! FileManager.default.removeItem(at: self.inputs[2].appendingPathComponent("same")) }
+                }
+            }, logEvent: log.record)
+            log.finish(result)
+            XCTAssertNil(result.output)
+            XCTAssertEqual(decisions.count, 1)
+            XCTAssertEqual(decisions[0].scanCompleted, mode != "scan")
+            let row = try XCTUnwrap(parse(exported(log, .csv)).first { $0[1] == "Conflicting File Decisions" })
+            XCTAssertTrue(row[9].contains("Output is not finalized"))
+            if mode == "scan" { XCTAssertEqual(row[5], "Scan incomplete; decisions so far only") }
+            let txt = String(decoding: try exported(log, .txt), as: UTF8.self)
+            XCTAssertTrue(txt.contains("Output is not finalized. These are selection decisions only."))
+            if mode == "build" { try write(2, "same", "c") }
+        }
+    }
+
     func testCSVProtectionPredicate() {
         let dangerous = ["=", "+", "-", "@", "\t", "\r", "\n", "＝", "＋", "－", "＠"]
         for lead in dangerous {
@@ -143,13 +248,13 @@ final class MergeLogTests: XCTestCase {
         XCTAssertEqual(selections.count, 2)
         XCTAssertTrue(selections.allSatisfy { $0[2] == name && !$0[4].isEmpty && !$0[6].isEmpty })
         XCTAssertTrue(selections[0][7].contains(".123456781+09:00")); XCTAssertTrue(selections[0][8].contains(".123456780+09:00"))
-        let final = rows.filter { $0[1] == "Final selected input" }
+        let final = rows.filter { $0[1] == "Conflicting File Decisions" }
         XCTAssertEqual(final.count, 1); XCTAssertEqual(final[0][3], inputs[2].path)
         XCTAssertEqual(rows.filter { $0[1] == "Skipped identical file" }.count, 2)
         XCTAssertTrue(rows.contains { $0[9].contains("Output finalized: " + req.output.path) })
         let txtData = try exported(log, .txt), txt = String(decoding: txtData, as: UTF8.self)
         XCTAssertFalse(txtData.starts(with: [0xef, 0xbb, 0xbf])); XCTAssertFalse(txt.contains("\r"))
-        for value in ["File selection", "Skipped identical file", "Final selected input", inputs[2].path, ".123456782+09:00", "Run conditions", "Activity log (chronological)", "Final result"] { XCTAssertTrue(txt.contains(value), value) }
+        for value in ["File selection", "Skipped identical file", "Conflicting File Decisions", inputs[2].path, ".123456782+09:00", "Run conditions", "Activity log (chronological)", "Final result"] { XCTAssertTrue(txt.contains(value), value) }
     }
     func testFailuresCancellationAndCleanupFailureAreUnfinalized() throws {
         try write(0, "same", "a"); try write(1, "same", "b")
@@ -175,7 +280,7 @@ final class MergeLogTests: XCTestCase {
             if mode == "conflict" {
                 let row = try XCTUnwrap(rows.first { $0[1] == "Conflicting items" })
                 XCTAssertEqual(row[2], "same"); XCTAssertEqual(row[3], inputs[0].path); XCTAssertEqual(row[4], inputs[1].path)
-                XCTAssertFalse(rows.contains { $0[1] == "Final selected input" })
+                XCTAssertFalse(rows.contains { $0[1] == "Conflicting File Decisions" })
             }
             if mode == "cleanup" { XCTAssertTrue(txt.contains("cleanup failed")); XCTAssertTrue(result.cleanupFailed) }
             if mode == "validation" { try FileManager.default.removeItem(at: req.output) }
@@ -214,7 +319,7 @@ final class MergeLogTests: XCTestCase {
         if let decision = decisions.first {
             XCTAssertEqual(Data(decision.relativePath!.utf8), Data(first.utf8))
             let rows = try parse(exported(log, .csv))
-            for row in rows where row[1] == "File selection" || row[1] == "Final selected input" {
+            for row in rows where row[1] == "File selection" || row[1] == "Conflicting File Decisions" {
                 XCTAssertEqual(Data(row[2].utf8), Data(first.utf8)); XCTAssertEqual(row[3], inputs[1].path)
             }
         } else { XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: result.output!.path).count, 2) }

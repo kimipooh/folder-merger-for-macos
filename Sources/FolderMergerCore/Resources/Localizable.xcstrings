@@ -1674,8 +1674,18 @@
     "Protected columns": {
       "extractionState": "manual",
       "localizations": {
-        "en": {"stringUnit": {"state": "translated", "value": "Protected columns"}},
-        "ja": {"stringUnit": {"state": "translated", "value": "保護した列"}}
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Protected columns"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保護した列"
+          }
+        }
       },
       "generatesSymbol": false
     },
@@ -2014,6 +2024,114 @@
           }
         }
       }
+    },
+    "Detailed per-file log (screen display)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detailed per-file log (screen display)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルごとの詳細ログ（画面表示）"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Category": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Category"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "区分"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Selected Input": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selected Input"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "採用元"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Rejected Inputs": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rejected Inputs"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不採用元"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Warnings and errors": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Warnings and errors"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "警告・エラー"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Created folders: %lld": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Created folders: %lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダ作成件数: %lld"
+          }
+        }
+      },
+      "generatesSymbol": false
     }
   },
   "version": "1.0"

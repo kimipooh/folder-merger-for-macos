@@ -632,7 +632,7 @@ private final class EventContext {
                         counters: counters, selection: selection))
     }
     func detail(_ kind: MergeEvent.Kind, entry: Entry, bytes: Int64? = nil, message: String) {
-        if detailed { emit(kind, relative: entry.relative, source: entry.root, bytes: bytes, message: message) }
+        emit(kind, relative: entry.relative, source: entry.root, bytes: bytes, message: message, screen: detailed)
     }
 }
 public struct ExecutionStep: Sendable {

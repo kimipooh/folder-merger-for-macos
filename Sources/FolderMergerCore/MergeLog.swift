@@ -1,5 +1,7 @@
 import Foundation
 
+public enum MergeLogKind: String, CaseIterable { case summary, detailed }
+
 public enum MergeLogFormat: String, CaseIterable { case csv, txt }
 
 /// Single-worker journal. Only one record and a fixed read buffer are retained.
@@ -14,6 +16,8 @@ public final class MergeLog: @unchecked Sendable {
     private var finished = false
     private var outputFinalized = false
     private var decisionCount = 0
+    private var directoryCount = 0
+    private var finalRows: [[String]] = []
 
     public init(request: MergeRequest, detailed: Bool, language: String? = nil,
                 temporaryDirectory: URL = FileManager.default.temporaryDirectory) {
@@ -30,7 +34,7 @@ public final class MergeLog: @unchecked Sendable {
         condition("Final destination", request.output.path)
         let o = request.options
         for (key, enabled) in [("File creation and modification dates", o.fileDates), ("File permissions", o.filePermissions),
-                               ("Folder creation and modification dates", o.directoryDates), ("Extended attributes and resource forks", o.extendedAttributes), ("Detailed per-file log", detailed)] {
+                               ("Folder creation and modification dates", o.directoryDates), ("Extended attributes and resource forks", o.extendedAttributes), ("Detailed per-file log (screen display)", detailed)] {
             condition(key, text(enabled ? "On" : "Off"))
         }
         condition("When different files have the same path", text(o.samePathPolicy.localizationKey))
@@ -51,6 +55,7 @@ public final class MergeLog: @unchecked Sendable {
     }
     public func record(_ event: MergeEvent) {
         guard !finished else { return }
+        if event.kind == .directoryCreated { directoryCount += 1 }
         let selection = event.selection
         let action: String
         switch event.kind {
@@ -93,8 +98,9 @@ public final class MergeLog: @unchecked Sendable {
         let counts = String(format: text("Copied: %lld · Identical files skipped: %lld · Warnings: %lld · Errors: %lld"), c.copied, c.skipped, c.warnings, c.errors)
         let output = result.output.map { text("Output finalized") + ": " + $0.path }
             ?? text(result.cleanupFailed ? "Output not finalized; temporary folder cleanup failed." : "Output not finalized; no temporary output remains.")
-        append([Self.time(end), text("Final result"), "", "", "", text(status), "", "", "", counts + "; " + output])
-        append([Self.time(end), text("Final result"), "", "", "", "", "", "", "", text("End time") + ": " + Self.time(end)])
+        finalRows.append([Self.time(end), text("Final result"), "", "", "", text(status), "", "", "", counts + "; " + output])
+        finalRows.append([Self.time(end), text("Final result"), "", "", "", "", "", "", "", text("End time") + ": " + Self.time(end)])
+        for row in finalRows { append(row) }
         finished = true
         do { try writer?.close() } catch { recordingError = error.localizedDescription }
         writer = nil
@@ -103,7 +109,10 @@ public final class MergeLog: @unchecked Sendable {
         let f = DateFormatter(); f.dateFormat = "yyyyMMdd-HHmmss"; f.locale = Locale(identifier: "en_US_POSIX")
         return "FolderMerger-log-" + f.string(from: started)
     }
-    public func export(to destination: URL, format: MergeLogFormat) throws {
+    public func suggestedFilename(kind: MergeLogKind) -> String {
+        suggestedFilename.replacingOccurrences(of: "FolderMerger-log-", with: "FolderMerger-" + kind.rawValue + "-log-")
+    }
+    public func export(to destination: URL, format: MergeLogFormat, kind: MergeLogKind = .detailed) throws {
         guard finished else { throw CocoaError(.fileWriteUnknown) }
         // NSSavePanel owns replacement approval. Conversion writes to an adjacent temporary
         // file first, so errors never truncate an existing export.
@@ -113,6 +122,14 @@ public final class MergeLog: @unchecked Sendable {
         let output = try FileHandle(forWritingTo: temporary)
         defer { try? output.close() }
         func write(_ s: String) throws { try output.write(contentsOf: Data(s.utf8)) }
+        if kind == .summary {
+            try exportSummary(format: format, output: output)
+            try output.close()
+            if FileManager.default.fileExists(atPath: destination.path) {
+                _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
+            } else { try FileManager.default.moveItem(at: temporary, to: destination) }
+            return
+        }
         let headings = ["Time", "Action", "Relative Path", "Input", "Compared With", "Decision", "Applied Rule", "Input Modified", "Compared Modified", "Details"].map(text)
         if format == .csv { try output.write(contentsOf: Data([0xef, 0xbb, 0xbf])); try write(Self.csv(headings, metadataHeading: text("Protected columns"))) }
         else { try write(text("Run conditions") + "\n") }
@@ -182,6 +199,69 @@ public final class MergeLog: @unchecked Sendable {
             _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
         } else { try FileManager.default.moveItem(at: temporary, to: destination) }
     }
+    static let summaryColumnIdentifiers = ["category", "relative_path", "selected_input", "rejected_inputs", "applied_rule", "details"]
+
+    /// Reopen the journal for each section; retain only a read buffer and one record.
+    private func readRows(_ body: ([String]) throws -> Void) throws {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            if recordingError != nil { return }
+            throw CocoaError(.fileReadNoSuchFile)
+        }
+        let input = try FileHandle(forReadingFrom: url)
+        defer { try? input.close() }
+        var buffer = Data()
+        while let chunk = try input.read(upToCount: 65536), !chunk.isEmpty {
+            buffer.append(chunk)
+            while let newline = buffer.firstIndex(of: 10) {
+                try body(JSONDecoder().decode([String].self, from: Data(buffer[..<newline])))
+                buffer.removeSubrange(...newline)
+            }
+        }
+        if !buffer.isEmpty && recordingError == nil { throw CocoaError(.fileReadCorruptFile) }
+    }
+
+    private func exportSummary(format: MergeLogFormat, output: FileHandle) throws {
+        func write(_ value: String) throws { try output.write(contentsOf: Data(value.utf8)) }
+        let headings = ["Category", "Relative Path", "Selected Input", "Rejected Inputs", "Applied Rule", "Details"].map(text)
+        func row(_ values: [String]) throws {
+            if format == .csv {
+                try write(Self.csv(values, identifiers: Self.summaryColumnIdentifiers))
+            } else {
+                try write(zip(headings, values).filter { !$0.1.isEmpty }.map {
+                    $0.0 + ": " + $0.1.replacingOccurrences(of: "\r", with: "\\r").replacingOccurrences(of: "\n", with: "\\n")
+                }.joined(separator: " | ") + "\n")
+            }
+        }
+        func section(_ key: String) throws { if format == .txt { try write("\n" + text(key) + "\n") } }
+        if format == .csv {
+            try output.write(contentsOf: Data([0xef, 0xbb, 0xbf]))
+            try write(Self.csv(headings, metadataHeading: text("Protected columns"), identifiers: Self.summaryColumnIdentifiers))
+        }
+        try section("Run conditions")
+        try readRows { r in
+            if r[1] == text("Run conditions") {
+                try row([text(r[3].isEmpty ? "Run conditions" : "Input"), "", r[3], "", "", r[9]])
+            }
+        }
+        let state = text(outputFinalized ? "Decisions reflected in finalized output." : "Output is not finalized. These are selection decisions only.")
+        try section("Conflicting File Decisions")
+        try row([text("Conflicting File Decisions"), "", "", "", "", String(format: text("Conflicting paths: %lld"), decisionCount) + "; " + state])
+        try readRows { r in
+            if r[1] == text("Conflicting File Decisions") {
+                try row([r[1], r[2], r[3], r[4], r[6], r[5] + "; " + state])
+            }
+        }
+        try section("Warnings and errors")
+        if let recordingError { try row([text("Warning"), "", "", "", "", text("Incomplete log") + ": " + recordingError]) }
+        let issues = ["Warning", "Failed", "Cancelled", "Conflicting items"].map(text)
+        try readRows { r in
+            if issues.contains(r[1]) { try row([r[1], r[2], r[3], r[4], r[6], r[9]]) }
+        }
+        try section("Final result")
+        for r in finalRows { try row([r[1], "", "", "", "", [r[5], r[9]].filter { !$0.isEmpty }.joined(separator: "; ")]) }
+        try row([text("Final result"), "", "", "", "", String(format: text("Created folders: %lld"), directoryCount) + "; " + String(format: text("Conflicting paths: %lld"), decisionCount)])
+    }
+
     // Stable identifiers describe only the original ten columns, in output order.
     static let csvColumnIdentifiers = ["time", "action", "relative_path", "input", "compared_with",
                                        "decision", "applied_rule", "input_modified", "compared_modified", "details"]
@@ -202,11 +282,11 @@ public final class MergeLog: @unchecked Sendable {
 
     /// Also accepts the localized eleventh heading. Its metadata describes the
     /// original ten headings exactly as it does ordinary data rows.
-    static func csv(_ row: [String], metadataHeading: String? = nil) -> String {
+    static func csv(_ row: [String], metadataHeading: String? = nil, identifiers: [String] = csvColumnIdentifiers) -> String {
         var protected: [String] = []
         var values = row.enumerated().map { index, value in
             if needsCSVProtection(value) {
-                protected.append(csvColumnIdentifiers[index])
+                protected.append(identifiers[index])
                 return "'" + value
             }
             return value

@@ -132,15 +132,24 @@ final class MergeModel: ObservableObject {
         guard !busy, let savedLog else { return }
         let panel = NSSavePanel()
         panel.title = L("Save Log…")
-        panel.nameFieldStringValue = savedLog.suggestedFilename + ".csv"
-        let picker = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 180, height: 28))
-        picker.addItems(withTitles: [L("CSV (UTF-8 with BOM)"), L("TXT (UTF-8)")])
-        let controller = LogFormatController(panel: panel, picker: picker, filename: savedLog.suggestedFilename)
-        picker.target = controller; picker.action = #selector(LogFormatController.changed)
-        panel.accessoryView = picker
+        panel.nameFieldStringValue = ""
+        let picker = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 230, height: 28))
+        picker.addItems(withTitles: [L("TXT (UTF-8)"), L("CSV (UTF-8 with BOM)")])
+        let kindPicker = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 230, height: 28))
+        kindPicker.addItems(withTitles: [L("Summary log"), L("Detailed log")])
+        let controller = LogFormatController(panel: panel, picker: picker, kindPicker: kindPicker, log: savedLog)
+        for control in [picker, kindPicker] {
+            control.target = controller; control.action = #selector(LogFormatController.changed)
+        }
+        let accessory = NSGridView(views: [
+            [NSTextField(labelWithString: L("Log type")), kindPicker],
+            [NSTextField(labelWithString: L("Format")), picker]
+        ])
+        accessory.rowSpacing = 8
+        panel.accessoryView = accessory
         controller.changed()
         if panel.runModal() == .OK, let url = panel.url {
-            do { try savedLog.export(to: url, format: picker.indexOfSelectedItem == 0 ? .csv : .txt) }
+            do { try savedLog.export(to: url, format: controller.format, kind: controller.kind) }
             catch {
                 let alert = NSAlert(); alert.messageText = L("Could not save log")
                 alert.informativeText = error.localizedDescription; alert.runModal()
@@ -451,15 +460,21 @@ struct SettingsView: View {
 private final class LogFormatController: NSObject {
     let panel: NSSavePanel
     let picker: NSPopUpButton
-    let filename: String
-    init(panel: NSSavePanel, picker: NSPopUpButton, filename: String) {
-        self.panel = panel; self.picker = picker; self.filename = filename
+    let kindPicker: NSPopUpButton
+    let log: MergeLog
+    private var previousDefault = ""
+    var kind: MergeLogKind { kindPicker.indexOfSelectedItem == 0 ? .summary : .detailed }
+    var format: MergeLogFormat { picker.indexOfSelectedItem == 0 ? .txt : .csv }
+    init(panel: NSSavePanel, picker: NSPopUpButton, kindPicker: NSPopUpButton, log: MergeLog) {
+        self.panel = panel; self.picker = picker; self.kindPicker = kindPicker; self.log = log
     }
     @objc func changed() {
-        let ext = picker.indexOfSelectedItem == 0 ? "csv" : "txt"
+        let ext = format.rawValue
         panel.allowedContentTypes = [UTType(filenameExtension: ext)!]
         let current = panel.nameFieldStringValue
-        let stem = current.isEmpty ? filename : (current as NSString).deletingPathExtension
-        panel.nameFieldStringValue = stem + "." + ext
+        let stem = (current as NSString).deletingPathExtension
+        let defaultStem = log.suggestedFilename(kind: kind)
+        panel.nameFieldStringValue = (stem.isEmpty || stem == previousDefault ? defaultStem : stem) + "." + ext
+        previousDefault = defaultStem
     }
 }

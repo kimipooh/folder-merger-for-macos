@@ -203,13 +203,13 @@ final class MergeLogTests: XCTestCase {
     func write(_ index: Int, _ name: String, _ value: String) throws {
         try Data(value.utf8).write(to: inputs[index].appendingPathComponent(name))
     }
-    func exported(_ log: MergeLog, _ format: MergeLogFormat) throws -> Data {
+    func exported(_ log: MergeLog, _ format: MergeLogFormat, kind: MergeLogKind = .detailed) throws -> Data {
         let url = base.appendingPathComponent("export.\(format.rawValue)")
-        try log.export(to: url, format: format)
+        try log.export(to: url, format: format, kind: kind)
         return try Data(contentsOf: url)
     }
     // RFC 4180 parser: quoted CR/LF remain within a field, escaped quotes round trip.
-    func parse(_ data: Data) throws -> [[String]] {
+    func parse(_ data: Data, columns: Int = 11) throws -> [[String]] {
         XCTAssertEqual(Array(data.prefix(3)), [0xef, 0xbb, 0xbf])
         let chars = Array(try XCTUnwrap(String(data: data.dropFirst(3), encoding: .utf8)))
         var rows: [[String]] = [], fields: [String] = [], field = "", quoted = false, i = 0
@@ -226,7 +226,7 @@ final class MergeLogTests: XCTestCase {
             i += 1
         }
         XCTAssertFalse(quoted); XCTAssertTrue(field.isEmpty); XCTAssertTrue(fields.isEmpty)
-        XCTAssertTrue(rows.allSatisfy { $0.count == 11 })
+        XCTAssertTrue(rows.allSatisfy { $0.count == columns })
         return rows
     }
     func testSelectionsSkippedNewerDatesAndSpecialPathsInBothFormats() throws {
@@ -357,5 +357,101 @@ final class MergeLogTests: XCTestCase {
             XCTAssertTrue(txt.contains(language == "ja" ? "実行条件" : "Run conditions"))
             if let output = result.output { try FileManager.default.removeItem(at: output) }
         }
+    }
+}
+
+extension MergeLogTests {
+    func testAllKindsAndFormatsAcrossOutcomes() throws {
+        for mode in ["success", "warnings", "conflict", "cancel", "validation", "cleanup"] {
+            for i in 0..<3 { try write(i, "same", "different-\(i)"); try write(i, "identical", "identical") }
+            try FileManager.default.createDirectory(at: inputs[0].appendingPathComponent("folder"), withIntermediateDirectories: true)
+            let req = request(mode == "conflict" ? .stop : .later)
+            if mode == "validation" { try FileManager.default.createDirectory(at: req.output, withIntermediateDirectories: true) }
+            let log = MergeLog(request: req, detailed: false, language: "en")
+            let engine = MergeEngine(), token = CancellationToken()
+            if mode == "warnings" { engine.attributeOperation = { _, _, _ in ENOTSUP } }
+            if mode == "cancel" { engine.beforeCommit = { token.cancel() } }
+            if mode == "cleanup" {
+                engine.beforeCommit = {
+                    for url in try FileManager.default.contentsOfDirectory(at: self.destination, includingPropertiesForKeys: nil) where url.lastPathComponent.contains("foldermerger-") { try FileManager.default.removeItem(at: url) }
+                    throw MergeError("synthetic cleanup failure")
+                }
+            }
+            var screen: [MergeEvent.Kind] = []
+            let result = engine.run(req, cancellation: token, detailedLog: false, event: { screen.append($0.kind) }, logEvent: log.record)
+            log.finish(result)
+            XCTAssertFalse(screen.contains(.copied)); XCTAssertFalse(screen.contains(.directoryCreated)); XCTAssertFalse(screen.contains(.skipped))
+            XCTAssertEqual(result.status, mode == "success" ? .success : mode == "warnings" ? .warnings : mode == "cancel" ? .cancelled : .failure)
+            for kind in MergeLogKind.allCases {
+                let csv = try parse(exported(log, .csv, kind: kind), columns: kind == .summary ? 7 : 11)
+                let txtData = try exported(log, .txt, kind: kind)
+                let txt = String(decoding: txtData, as: UTF8.self)
+                XCTAssertFalse(txtData.starts(with: [0xef, 0xbb, 0xbf])); XCTAssertFalse(txt.contains("\r"))
+                let finalized = result.output != nil
+                XCTAssertTrue(txt.contains(finalized ? "Output finalized" : "Output not finalized"))
+                XCTAssertTrue(csv.contains { $0.last != nil && $0.joined().contains(finalized ? "Output finalized" : "Output not finalized") })
+                if mode == "cleanup" { XCTAssertTrue(txt.contains("cleanup failed")) }
+                if mode == "warnings" { XCTAssertTrue(csv.contains { $0[kind == .summary ? 0 : 1] == "Warning" }) }
+                if mode == "conflict" { XCTAssertTrue(txt.contains("Conflicting items")); XCTAssertTrue(txt.contains("Failed")) }
+                if kind == .summary {
+                    for omitted in ["Category: Copied", "Created folder |", "Skipped identical file", "File selection", "Phase", "Activity log (chronological)"] { XCTAssertFalse(txt.contains(omitted), omitted) }
+                    XCTAssertTrue(txt.contains("Copied:")); XCTAssertTrue(txt.contains("Created folders:"))
+                    for heading in ["Run conditions", "Conflicting File Decisions", "Warnings and errors", "Final result"] { XCTAssertTrue(txt.contains("\n" + heading + "\n")) }
+                    if !finalized { XCTAssertGreaterThanOrEqual(txt.components(separatedBy: "Output ").count - 1, 2) }
+                    if mode == "success" || mode == "warnings" || mode == "cancel" || mode == "cleanup" {
+                        let row = try XCTUnwrap(csv.first { $0[0] == "Conflicting File Decisions" && $0[1] == "same" })
+                        XCTAssertEqual(row[2], inputs[2].path)
+                        XCTAssertEqual(row[3], inputs.prefix(2).map(\.path).joined(separator: "; "))
+                    }
+                } else if finalized {
+                    XCTAssertTrue(csv.contains { $0[1] == "Copied" }); XCTAssertTrue(csv.contains { $0[1] == "Created folder" })
+                }
+            }
+            if FileManager.default.fileExists(atPath: req.output.path) { try FileManager.default.removeItem(at: req.output) }
+        }
+    }
+
+    func testSummaryProtectionHeadersAndIncompleteScan() throws {
+        for language in ["en", "ja"] {
+            for lead in ["=", "+", "-", "@", "\t", "\r", "\n", "＝", "＋", "－", "＠", " \u{200B}="] {
+                let name = lead + "日本語,\"資料\"\r\n"
+                let selected = try XCTUnwrap(URL(string: name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!))
+                let log = MergeLog(request: request(), detailed: false, language: language)
+                let decision = ConflictingFileDecision(relativePath: name, selectedInput: selected, rejectedInputs: [selected, selected], policy: .later, scanCompleted: false)
+                log.record(MergeEvent(timestamp: Date(), kind: .finalSelection, relativePath: name, sourceInput: selected, bytes: nil, attribute: nil, reason: nil, message: "", counters: MergeCounters(), selection: nil, finalSelection: decision))
+                log.finish(MergeResult(status: .failure, output: nil, counters: MergeCounters(), warnings: [], error: MergeError("synthetic")))
+                let rows = try parse(exported(log, .csv, kind: .summary), columns: 7)
+                XCTAssertEqual(rows[0], language == "en" ? ["Category", "Relative Path", "Selected Input", "Rejected Inputs", "Applied Rule", "Details", "Protected columns"] : ["区分", "相対パス", "採用元", "不採用元", "適用ルール", "詳細", "保護した列"])
+                let row = try XCTUnwrap(rows.first { $0[1].hasSuffix(name) })
+                let originals = [name, selected.path, [selected.path, selected.path].joined(separator: "; ")]
+                for (offset, original) in originals.enumerated() {
+                    let index = offset + 1
+                    let protected = row[6].split(separator: ";").contains(Substring(MergeLog.summaryColumnIdentifiers[index]))
+                    XCTAssertEqual(protected, MergeLog.needsCSVProtection(original))
+                    XCTAssertEqual(protected ? String(row[index].dropFirst()) : row[index], original)
+                }
+                XCTAssertTrue(row[5].contains(language == "en" ? "Scan incomplete" : "走査未完了"))
+            }
+        }
+    }
+
+    func testSummaryLargeJournalAndMissingJournal() throws {
+        let log = MergeLog(request: request(), detailed: false, language: "en")
+        let decision = ConflictingFileDecision(relativePath: "file", selectedInput: inputs[0], rejectedInputs: Array(inputs.dropFirst()), policy: .earlier, scanCompleted: true)
+        for _ in 0..<6101 {
+            log.record(MergeEvent(timestamp: Date(), kind: .finalSelection, relativePath: "file", sourceInput: inputs[0], bytes: nil, attribute: nil, reason: nil, message: "", counters: MergeCounters(), selection: nil, finalSelection: decision))
+        }
+        log.finish(MergeResult(status: .success, output: request().output, counters: MergeCounters(), warnings: [], error: nil))
+        XCTAssertEqual(try parse(exported(log, .csv, kind: .summary), columns: 7).filter { $0[1] == "file" }.count, 6101)
+        XCTAssertTrue(String(decoding: try exported(log, .txt, kind: .summary), as: UTF8.self).contains("Conflicting paths: 6101"))
+        XCTAssertEqual(try parse(exported(log, .csv)).filter { $0[1] == "Conflicting File Decisions" }.count, 6101)
+        let missing = MergeLog(request: request(), detailed: false, language: "en", temporaryDirectory: base.appendingPathComponent("missing"))
+        missing.finish(MergeResult(status: .cancelled, output: nil, counters: MergeCounters(), warnings: [], error: nil))
+        for format in MergeLogFormat.allCases {
+            let text = String(decoding: try exported(missing, format, kind: .summary), as: UTF8.self)
+            XCTAssertTrue(text.contains("Incomplete log")); XCTAssertTrue(text.contains("Output not finalized"))
+        }
+        XCTAssertTrue(log.suggestedFilename(kind: .summary).hasPrefix("FolderMerger-summary-log-"))
+        XCTAssertTrue(log.suggestedFilename(kind: .detailed).hasPrefix("FolderMerger-detailed-log-"))
     }
 }

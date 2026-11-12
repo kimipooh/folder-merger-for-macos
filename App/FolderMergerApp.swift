@@ -123,6 +123,29 @@ final class MergeModel: ObservableObject {
     }
     private var generation = 0
     private var cancellation: CancellationToken?
+    private var savedLog: MergeLog?
+    @Published var canSaveLog = false
+
+    func saveLog() {
+        guard !busy, let savedLog else { return }
+        let panel = NSSavePanel()
+        panel.title = L("Save Log…")
+        panel.nameFieldStringValue = savedLog.suggestedFilename + ".csv"
+        let picker = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 180, height: 28))
+        picker.addItems(withTitles: [L("CSV (UTF-8 with BOM)"), L("TXT (UTF-8)")])
+        let controller = LogFormatController(panel: panel, picker: picker, filename: savedLog.suggestedFilename)
+        picker.target = controller; picker.action = #selector(LogFormatController.changed)
+        panel.accessoryView = picker
+        controller.changed()
+        if panel.runModal() == .OK, let url = panel.url {
+            do { try savedLog.export(to: url, format: picker.indexOfSelectedItem == 0 ? .csv : .txt) }
+            catch {
+                let alert = NSAlert(); alert.messageText = L("Could not save log")
+                alert.informativeText = error.localizedDescription; alert.runModal()
+            }
+        }
+        withExtendedLifetime(controller) {}
+    }
 
     var request: MergeRequest? {
         destination.map { MergeRequest(inputs: inputs, destination: $0, name: name, options: settings.options) }
@@ -169,10 +192,13 @@ final class MergeModel: ObservableObject {
     }
     func start() {
         guard !busy, validation.isEmpty, let request else { return }
+        savedLog = nil; canSaveLog = false
         busy = true; errorMessage = ""; output = nil; completed = 0; total = 0; status = L("Preparing…")
         snapshot = MergePlanDescription(request: request)
         logLines = []; omittedLines = 0; counters = MergeCounters(); warnings = []; finalStatus = ""; currentItem = ""
         let detailed = settings.detailedLog
+        let journal = MergeLog(request: request, detailed: detailed)
+        savedLog = journal
         let token = CancellationToken()
         cancellation = token
         DispatchQueue.global(qos: .userInitiated).async {
@@ -201,9 +227,11 @@ final class MergeModel: ObservableObject {
                 if lines.count < 5000 { lines.append(e.line) } else { omitted += 1 }
                 latestEvent = e
                 flush()
-            }, progress: { p in latest = p; flush() })
+            }, logEvent: { journal.record($0) }, progress: { p in latest = p; flush() })
+            journal.finish(result)
             flush(force: true)
             DispatchQueue.main.async {
+                self.savedLog = journal; self.canSaveLog = true
                 self.busy = false; self.cancellation = nil
                 self.output = result.output; self.counters = result.counters; self.warnings = result.warnings
                 self.finalStatus = result.status.label; self.status = result.status.label
@@ -212,6 +240,8 @@ final class MergeModel: ObservableObject {
             }
         }
     }
+
+    func applicationWillTerminate() { savedLog?.removeTemporaryLog() }
 
     func cancel() { cancellation?.cancel(); status = L("Cancellation requested. Waiting for processing to stop and cleanup to finish…") }
 }
@@ -296,6 +326,7 @@ struct ContentView: View {
             }
             GroupBox(L("Activity Log")) {
                 VStack(alignment: .leading) {
+                    Button(L("Save Log…"), action: model.saveLog).disabled(model.busy || !model.canSaveLog)
                     Text(model.counters.description)
                     Text(L("Current item: %@", model.currentItem))
                     if model.omittedLines > 0 { Text(LC("Omitted %lld lines", model.omittedLines)) }
@@ -324,6 +355,9 @@ struct ContentView: View {
             }
         }.padding(22)
         }.frame(minWidth: 700, minHeight: 580)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            model.applicationWillTerminate()
+        }
     }
 }
 
@@ -375,5 +409,22 @@ struct SettingsView: View {
                 }
             }.padding(22)
         }.frame(width: 560, height: 620)
+    }
+}
+
+@MainActor
+private final class LogFormatController: NSObject {
+    let panel: NSSavePanel
+    let picker: NSPopUpButton
+    let filename: String
+    init(panel: NSSavePanel, picker: NSPopUpButton, filename: String) {
+        self.panel = panel; self.picker = picker; self.filename = filename
+    }
+    @objc func changed() {
+        let ext = picker.indexOfSelectedItem == 0 ? "csv" : "txt"
+        panel.allowedContentTypes = [UTType(filenameExtension: ext)!]
+        let current = panel.nameFieldStringValue
+        let stem = current.isEmpty ? filename : (current as NSString).deletingPathExtension
+        panel.nameFieldStringValue = stem + "." + ext
     }
 }

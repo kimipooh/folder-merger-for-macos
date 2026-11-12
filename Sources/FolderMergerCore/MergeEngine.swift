@@ -36,7 +36,8 @@ public struct MergeError: LocalizedError {
     public enum Kind: Sendable, Equatable { case failure, cancelled }
     public let message: String
     public let kind: Kind
-    public init(_ message: String, kind: Kind = .failure) { self.message = message; self.kind = kind }
+    public let cleanupFailed: Bool
+    public init(_ message: String, kind: Kind = .failure, cleanupFailed: Bool = false) { self.message = message; self.kind = kind; self.cleanupFailed = cleanupFailed }
     public var errorDescription: String? { message }
 }
 
@@ -48,6 +49,7 @@ private struct Identity: Hashable {
 
 private struct Entry {
     var relative: String
+    var hadDecision = false
     let source: String
     let root: URL
     let info: stat
@@ -157,10 +159,11 @@ public final class MergeEngine {
         do { result = try measure() }
         catch {
             do { try FileManager.default.removeItem(at: probe) }
-            catch let cleanup { throw MergeError(L("%@\nTemporary folder cleanup also failed: %@\n%@", error.localizedDescription, probe.path, cleanup.localizedDescription)) }
+            catch let cleanup { throw MergeError(L("%@\nTemporary folder cleanup also failed: %@\n%@", error.localizedDescription, probe.path, cleanup.localizedDescription), cleanupFailed: true) }
             throw error
         }
-        try FileManager.default.removeItem(at: probe)
+        do { try FileManager.default.removeItem(at: probe) }
+        catch { throw MergeError(error.localizedDescription, cleanupFailed: true) }
         return result
     }
 
@@ -173,8 +176,9 @@ public final class MergeEngine {
 
     public func run(_ request: MergeRequest, cancellation: CancellationToken = CancellationToken(),
                     detailedLog: Bool = false, event: @escaping (MergeEvent) -> Void = { _ in },
+                    logEvent: @escaping (MergeEvent) -> Void = { _ in },
                     progress: (MergeProgress) -> Void = { _ in }) -> MergeResult {
-        let context = EventContext(detailed: detailedLog, sink: event)
+        let context = EventContext(detailed: detailedLog, sink: event, logSink: logEvent)
         do {
             let output = try execute(request, cancellation: cancellation, context: context, progress: progress)
             let status: MergeStatus = context.warnings.isEmpty ? .success : .warnings
@@ -187,7 +191,7 @@ public final class MergeEngine {
             context.emit(cancelled ? .cancelled : .error, message: failure.localizedDescription)
             let status: MergeStatus = cancelled ? .cancelled : .failure
             context.emit(.completed, message: status.label)
-            return MergeResult(status: status, output: nil, counters: context.counters, warnings: context.warnings, error: failure)
+            return MergeResult(status: status, output: nil, counters: context.counters, warnings: context.warnings, error: failure, cleanupFailed: context.cleanupFailed || failure.cleanupFailed)
         }
     }
 
@@ -223,7 +227,8 @@ public final class MergeEngine {
             progress(MergeProgress(phase: phase, completed: completed, total: total, bytesCopied: bytes, currentItem: currentItem, counters: context.counters))
         }
         func conflict(_ a: Entry, _ b: Entry) -> MergeError {
-            MergeError(L("Conflicting items:\nRelative path: %@\nInput: %@\nRelative path: %@\nInput: %@", a.relative, a.root.path, b.relative, b.root.path))
+            context.emit(.conflict, relative: a.relative, source: a.root, compared: b.root, message: L("Conflicting items"), screen: false)
+            return MergeError(L("Conflicting items:\nRelative path: %@\nInput: %@\nRelative path: %@\nInput: %@", a.relative, a.root.path, b.relative, b.root.path))
         }
         func scan(_ directory: String, root: URL, prefix: String) throws {
             try cancellation.check()
@@ -255,7 +260,7 @@ public final class MergeEngine {
                 guard kind == S_IFDIR || kind == S_IFREG else {
                     throw MergeError(L("Symbolic link or unsupported special file:\nRelative path: %@\nInput: %@\n%@", relative, root.path, url))
                 }
-                var entry = Entry(relative: relative, source: url, root: root, info: value)
+                let entry = Entry(relative: relative, source: url, root: root, info: value)
                 let key = try pathKey(relative)
                 if let index = paths[key] {
                     let previous = plan[index]
@@ -266,7 +271,7 @@ public final class MergeEngine {
                         }
                         if equal {
                             context.counters.skipped += 1
-                            context.detail(.skipped, entry: entry, bytes: Int64(value.st_size), message: L("Skipped identical file"))
+                            context.emit(.skipped, relative: previous.relative, source: entry.root, compared: previous.root, bytes: Int64(value.st_size), message: L("Skipped identical file"), screen: context.detailed)
                         } else {
                             let policy = request.options.samePathPolicy
                             var useNext = false
@@ -285,13 +290,12 @@ public final class MergeEngine {
                                 }
                                 useNext = left < right
                             }
-                            let selected = useNext ? entry : previous
+                            var selected = useNext ? entry : previous
+                            selected.relative = previous.relative
                             let rejected = useNext ? previous : entry
                             context.decision(selected: selected, rejected: rejected, policy: policy)
-                            if useNext {
-                                entry.relative = previous.relative
-                                plan[index] = entry
-                            }
+                            selected.hadDecision = true
+                            plan[index] = selected
                         }
                     }
                 } else {
@@ -304,6 +308,9 @@ public final class MergeEngine {
             }
         }
         for input in request.inputs { try scan(input.path, root: input, prefix: "") }
+        for entry in plan where entry.hadDecision {
+            context.emit(.finalSelection, relative: entry.relative, source: entry.root, message: L("Final selected input"), screen: false)
+        }
         try cancellation.check()
         let temporary = request.destination.appendingPathComponent(".\(request.name).foldermerger-\(UUID().uuidString).tmp", isDirectory: true)
         guard temporary.withUnsafeFileSystemRepresentation({ mkdir($0!, 0o777) }) == 0 else {
@@ -311,13 +318,11 @@ public final class MergeEngine {
         }
         // mkdir applies the process umask. Keep this default mode for publication,
         // while restricting the unpublished construction tree to its owner.
-        let rootMode = try Self.info(temporary).st_mode & 0o777
-        guard temporary.withUnsafeFileSystemRepresentation({ chmod($0!, 0o700) }) == 0 else {
-            let error = Self.systemError("Cannot protect the temporary folder", temporary)
-            try? FileManager.default.removeItem(at: temporary)
-            throw error
-        }
         do {
+            let rootMode = try Self.info(temporary).st_mode & 0o777
+            guard temporary.withUnsafeFileSystemRepresentation({ chmod($0!, 0o700) }) == 0 else {
+                throw Self.systemError("Cannot protect the temporary folder", temporary)
+            }
             context.emit(.phase, message: L("Build in temporary folder"))
             var created: [Identity: Entry] = [:]
             for (index, entry) in plan.enumerated() {
@@ -379,6 +384,7 @@ public final class MergeEngine {
             // All I/O is synchronous on this worker. File descriptors are closed before cleanup.
             do { try FileManager.default.removeItem(at: temporary) }
             catch let cleanupError {
+                context.cleanupFailed = true
                 throw MergeError(L("%@\nCannot remove the temporary folder: %@\n%@", error.localizedDescription, temporary.path, cleanupError.localizedDescription))
             }
             throw error
@@ -568,9 +574,10 @@ public struct MergeResult {
     public let counters: MergeCounters
     public let warnings: [AttributeWarning]
     public let error: MergeError?
+    public var cleanupFailed: Bool = false
 }
 public struct MergeEvent: Sendable {
-    public enum Kind: Sendable { case fileSelected, phase, directoryCreated, copied, skipped, warning, error, cancelled, completed }
+    public enum Kind: Sendable { case conflict, finalSelection, fileSelected, phase, directoryCreated, copied, skipped, warning, error, cancelled, completed }
     public let timestamp: Date
     public let kind: Kind
     public let relativePath: String?
@@ -581,6 +588,7 @@ public struct MergeEvent: Sendable {
     public let message: String
     public let counters: MergeCounters
     public let selection: FileSelection?
+    public var comparedInput: URL? = nil
     public var line: String {
         L("%@ %@%@%@%@", timestamp.formatted(date: .omitted, time: .standard), message,
           relativePath.map { L(" %@", $0) } ?? "",
@@ -591,17 +599,23 @@ public struct MergeEvent: Sendable {
 private final class EventContext {
     let detailed: Bool
     let sink: (MergeEvent) -> Void
+    let logSink: (MergeEvent) -> Void
     var counters = MergeCounters()
     var warnings: [AttributeWarning] = []
-    init(detailed: Bool, sink: @escaping (MergeEvent) -> Void) { self.detailed = detailed; self.sink = sink }
-    func emit(_ kind: MergeEvent.Kind, relative: String? = nil, source: URL? = nil, bytes: Int64? = nil, attribute: String? = nil, reason: String? = nil, message: String) {
-        sink(MergeEvent(timestamp: Date(), kind: kind, relativePath: relative, sourceInput: source, bytes: bytes, attribute: attribute, reason: reason, message: message, counters: counters, selection: nil))
+    var cleanupFailed = false
+    init(detailed: Bool, sink: @escaping (MergeEvent) -> Void, logSink: @escaping (MergeEvent) -> Void) { self.detailed = detailed; self.sink = sink; self.logSink = logSink }
+    func deliver(_ event: MergeEvent, screen: Bool = true) {
+        logSink(event)
+        if screen { sink(event) }
+    }
+    func emit(_ kind: MergeEvent.Kind, relative: String? = nil, source: URL? = nil, compared: URL? = nil, bytes: Int64? = nil, attribute: String? = nil, reason: String? = nil, message: String, screen: Bool = true) {
+        deliver(MergeEvent(timestamp: Date(), kind: kind, relativePath: relative, sourceInput: source, bytes: bytes, attribute: attribute, reason: reason, message: message, counters: counters, selection: nil, comparedInput: compared), screen: screen)
     }
     func decision(selected: Entry, rejected: Entry, policy: SamePathPolicy) {
         let selection = FileSelection(selectedInput: selected.root, rejectedInput: rejected.root, policy: policy,
                                       selectedModificationTime: policy == .newer ? FileModificationTime(selected.info.st_mtimespec) : nil,
                                       rejectedModificationTime: policy == .newer ? FileModificationTime(rejected.info.st_mtimespec) : nil)
-        sink(MergeEvent(timestamp: Date(), kind: .fileSelected, relativePath: selected.relative,
+        deliver(MergeEvent(timestamp: Date(), kind: .fileSelected, relativePath: selected.relative,
                         sourceInput: selected.root, bytes: Int64(selected.info.st_size), attribute: nil, reason: nil,
                         message: L("Selected input: %@; rejected input: %@; rule: %@", selected.root.path, rejected.root.path, policy.label),
                         counters: counters, selection: selection))

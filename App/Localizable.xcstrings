@@ -1188,6 +1188,70 @@
       },
       "extractionState": "manual",
       "generatesSymbol": false
+    },
+    "Save Log…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save Log…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ログを保存…"
+          }
+        }
+      }
+    },
+    "CSV (UTF-8 with BOM)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CSV (UTF-8 with BOM)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CSV（UTF-8 BOM 付き）"
+          }
+        }
+      }
+    },
+    "TXT (UTF-8)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TXT (UTF-8)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TXT（UTF-8）"
+          }
+        }
+      }
+    },
+    "Could not save log": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not save log"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ログを保存できませんでした"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -16,12 +16,53 @@ private func LC(_ key: String, _ count: Int) -> String {
 @main
 struct FolderMergerApp: App {
     @StateObject private var settings = AppSettings()
+    @StateObject private var updates = UpdateModel()
 
     var body: some Scene {
         WindowGroup { ContentView(settings: settings) }
             .defaultSize(width: 760, height: 700)
             .windowResizability(.contentMinSize)
+            .commands {
+                CommandGroup(after: .appInfo) {
+                    Button(L("Check for Updates…")) { updates.check() }
+                        .disabled(updates.checking)
+                }
+            }
         Settings { SettingsView(settings: settings) }
+    }
+}
+
+@MainActor
+final class UpdateModel: ObservableObject {
+    @Published private(set) var checking = false
+
+    func check() {
+        guard !checking else { return }
+        checking = true
+        Task {
+            defer { checking = false }
+            let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+            let result = await UpdateChecker().check(currentVersion: current)
+            let alert = NSAlert()
+            alert.messageText = L("Check for Updates…")
+            var releaseURL: URL?
+            switch result {
+            case let .available(version, url):
+                alert.informativeText = L("A new version is available. Current: %@ · Release: %@", current, version)
+                alert.addButton(withTitle: L("Open Release Page"))
+                alert.addButton(withTitle: L("Cancel"))
+                releaseURL = url
+            case .upToDate: alert.informativeText = L("Your current version is up to date.")
+            case .noRelease: alert.informativeText = L("Could not retrieve a published release.")
+            case .rateLimited: alert.informativeText = L("GitHub rate limit reached. Please try again later.")
+            case .networkError: alert.informativeText = L("A network error occurred. Please try again.")
+            case .invalidResponse: alert.informativeText = L("The update server returned an invalid response.")
+            }
+            if releaseURL == nil { alert.addButton(withTitle: L("OK")) }
+            if alert.runModal() == .alertFirstButtonReturn, let url = releaseURL {
+                NSWorkspace.shared.open(url)
+            }
+        }
     }
 }
 

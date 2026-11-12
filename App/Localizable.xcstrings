@@ -936,6 +936,168 @@
           }
         }
       }
+    },
+    "Check for Updates…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check for Updates…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートを確認…"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Open Release Page": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Release Page"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リリースページを開く"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "A new version is available. Current: %@ · Release: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A new version is available. Current: %@ · Release: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいバージョンがあります。現在: %@・公開版: %@"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Your current version is up to date.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your current version is up to date."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在のバージョンは最新です。"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "Could not retrieve a published release.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not retrieve a published release."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公開済みのリリースを取得できませんでした。"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "GitHub rate limit reached. Please try again later.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub rate limit reached. Please try again later."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub のレート制限に達しました。時間をおいて再試行してください。"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "A network error occurred. Please try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A network error occurred. Please try again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通信エラーが発生しました。再試行してください。"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "The update server returned an invalid response.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The update server returned an invalid response."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新サーバーから不正な応答が返されました。"
+          }
+        }
+      },
+      "generatesSymbol": false
+    },
+    "OK": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
+          }
+        }
+      },
+      "generatesSymbol": false
     }
   },
   "version": "1.0"

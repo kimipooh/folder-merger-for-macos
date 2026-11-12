@@ -17,19 +17,23 @@ Folder Merger は、複数フォルダの中身を相対パスを保って選ん
 
 ## 動作環境
 
-macOS 13.0 以降。ビルドには Swift 5.9 以降に対応する Xcode が必要です。外部パッケージ依存はありません。
+macOS 13.0 以降、Apple Silicon（arm64）専用です。Intel Mac 用バイナリは配布しません。ビルドには Swift 5.9 以降に対応する Xcode が必要です。外部パッケージ依存はありません。
 
 ## 入手方法とビルド
 
-Release はまだ公開されていません。現時点ではソースからビルドしてください。Release 公開後は GitHub Releases でアプリ入り ZIP を配布する予定です。GitHub が自動生成する `Source code (zip)` はソースのみです。
+[GitHub Releases の v1.0.0](https://github.com/kimipooh/folder-merger-for-macos/releases/tag/v1.0.0)（[最新版](https://github.com/kimipooh/folder-merger-for-macos/releases/latest)）から `Folder-Merger-v1.0.0-macOS-Apple-Silicon.zip` をダウンロードし、展開して `Folder Merger.app` を取り出します。GitHub が自動生成する `Source code (zip)` / `Source code (tar.gz)` はソースのみで、アプリを含みません。
+
+Developer ID 署名・Apple 公証はありません。初回起動がブロックされた場合は、一度開こうとした後、「システム設定」→「プライバシーとセキュリティ」→「このまま開く」の順に進みます。新版でも再許可が必要な場合があります。
+
+Folder Merger メニューの「アップデートを確認…」で更新の有無を確認し、GitHub Releases から手動でダウンロードします。旧版を終了してから `.app` を入れ替えます。自動更新はありません。
 
 リポジトリのルートで実行します。生成物は一時領域に置きます。
 
 ```sh
 swift test --package-path macos --scratch-path "$TMPDIR/fm-build"
 xcodebuild -project macos/FolderMerger.xcodeproj -scheme FolderMerger \
-  -configuration Debug -derivedDataPath "$TMPDIR/fm-dd" build
-open "$TMPDIR/fm-dd/Build/Products/Debug/Folder Merger.app"
+  -configuration Release -arch arm64 -derivedDataPath "$TMPDIR/fm-rel-dd" build
+open "$TMPDIR/fm-rel-dd/Build/Products/Release/Folder Merger.app"
 ```
 
 Xcode で `macos/FolderMerger.xcodeproj` を開き、FolderMerger スキームで Run することもできます。初回起動時に Gatekeeper がブロックした場合は[マニュアル](docs/user-guide-ja.md#入手起動と手動アップデート)を参照してください。

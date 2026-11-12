@@ -35,6 +35,12 @@ final class UpdateCheckerTests: XCTestCase {
             XCTAssertEqual(result, .upToDate)
         }
     }
+    func testRelease100IsUpToDate() async {
+        let releasePage = "https://github.com/kimipooh/folder-merger-for-macos/releases/tag/v1.0.0"
+        let checker = UpdateChecker(transport: Stub(currentVersion: "1.0.0", body: payload(tag: "v1.0.0", url: releasePage)))
+        let result = await checker.check(currentVersion: "1.0.0")
+        XCTAssertEqual(result, .upToDate)
+    }
     func testMultiDigitReleaseResponse() async {
         let checker = UpdateChecker(transport: Stub(currentVersion: "1.9.0", body: payload(tag: "v1.10.0")))
         let result = await checker.check(currentVersion: "1.9.0")

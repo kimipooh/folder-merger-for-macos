@@ -10,7 +10,7 @@
 
 不変条件は「入力を変更しない」「既存の出力先を上書きしない」。入力を移動・改名・削除せず、内容と更新日時を変更しない。ただし読取りによるアクセス日時の更新は抑制しない。入力全体の時点スナップショットは作成しないため、実行中は他のアプリでも入力・保存先を変更しないこと。
 
-対応は macOS 13.0 以降（macos/Package.swift と Xcode deployment target）。App Sandbox は無効、現在は CODE_SIGNING_ALLOWED=NO。ユーザー権限で動き、macOS のプライバシー保護によるアクセス許可が別途必要になりうる。バンドル ID は仮の `org.foldermerger.local`、表示バージョン 1.0、ビルド番号 1。外部依存、Sparkle、自動更新はない。手動の更新確認メニューを About の直後に追加し、Settings は維持する。
+対応は macOS 13.0 以降（macos/Package.swift と Xcode deployment target）。App Sandbox は無効、現在は CODE_SIGNING_ALLOWED=NO。ユーザー権限で動き、macOS のプライバシー保護によるアクセス許可が別途必要になりうる。公開用バンドル ID は `io.github.kimipooh.foldermerger`、表示バージョン 1.0.0、ビルド番号 1。標準 About パネルの著作権表示は `© 2026 Kimiya Kitani`（NSHumanReadableCopyright、日英共通）。仮の `org.foldermerger.local` から ID を変更したため、旧 ID の設定は引き継がれない。1.0.0 以降の同じ ID の版同士では保存設定を引き継ぐ。配布バイナリは Apple Silicon（arm64）専用で、Intel Mac 用は配布しない。アーキテクチャはビルドコマンドの `-arch arm64` で指定し、プロジェクトの ARCHS 設定は変更しない。外部依存、Sparkle、自動更新はない。手動の更新確認メニューを About の直後に追加し、Settings は維持する。
 
 ## 手動の更新確認
 

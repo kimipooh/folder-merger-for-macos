@@ -48,23 +48,25 @@
         A00000000000000000000011 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; SDKROOT = macosx; MACOSX_DEPLOYMENT_TARGET = 13.0; SWIFT_VERSION = 5.0; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; DEBUG_INFORMATION_FORMAT = dwarf; }; };
         A00000000000000000000012 = {isa = XCBuildConfiguration; name = Release; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; SDKROOT = macosx; MACOSX_DEPLOYMENT_TARGET = 13.0; SWIFT_VERSION = 5.0; SWIFT_COMPILATION_MODE = wholemodule; }; };
         A00000000000000000000013 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {
-            PRODUCT_BUNDLE_IDENTIFIER = org.foldermerger.local;
+            PRODUCT_BUNDLE_IDENTIFIER = io.github.kimipooh.foldermerger;
             PRODUCT_NAME = "Folder Merger";
             GENERATE_INFOPLIST_FILE = YES;
             INFOPLIST_KEY_CFBundleDisplayName = "Folder Merger";
+            INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Kimiya Kitani";
             INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-            MARKETING_VERSION = 1.0; CURRENT_PROJECT_VERSION = 1;
+            MARKETING_VERSION = 1.0.0; CURRENT_PROJECT_VERSION = 1;
             ENABLE_APP_SANDBOX = NO;
             CODE_SIGNING_ALLOWED = NO;
             COMBINE_HIDPI_IMAGES = YES;
         }; };
         A00000000000000000000014 = {isa = XCBuildConfiguration; name = Release; buildSettings = {
-            PRODUCT_BUNDLE_IDENTIFIER = org.foldermerger.local;
+            PRODUCT_BUNDLE_IDENTIFIER = io.github.kimipooh.foldermerger;
             PRODUCT_NAME = "Folder Merger";
             GENERATE_INFOPLIST_FILE = YES;
             INFOPLIST_KEY_CFBundleDisplayName = "Folder Merger";
+            INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Kimiya Kitani";
             INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-            MARKETING_VERSION = 1.0; CURRENT_PROJECT_VERSION = 1;
+            MARKETING_VERSION = 1.0.0; CURRENT_PROJECT_VERSION = 1;
             ENABLE_APP_SANDBOX = NO;
             CODE_SIGNING_ALLOWED = NO;
             COMBINE_HIDPI_IMAGES = YES;

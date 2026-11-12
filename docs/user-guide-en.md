@@ -4,21 +4,23 @@
 
 ## 1. Overview and preparation
 
-On macOS 13.0 or later, merge the contents of multiple folders directly into a chosen empty destination folder. Paths are relative to each input root; the root names are omitted. Inputs are never moved, renamed, or deleted, and existing items are never overwritten. Empty folders are included. No Release is available yet; [build from source](../README.md).
+Folder Merger requires macOS 13.0 or later on Apple Silicon (arm64). It merges the contents of multiple folders directly into a chosen empty destination folder. Paths are relative to each input root; the root names are omitted. Inputs are never moved, renamed, or deleted, and existing items are never overwritten. Empty folders are included. No Intel Mac binary is distributed. See the [README](../README.md) for build instructions.
 
 The app runs with your user permissions and App Sandbox disabled. macOS may require permission to access folders. Do not change inputs or the destination in other apps during a merge: no point-in-time snapshot of all inputs is created. Reading may update input access times.
+
+The standard About panel (“About Folder Merger” in the Folder Merger menu) shows version 1.0.0 (build 1) and “© 2026 Kimiya Kitani”. The copyright text is the same in Japanese and English.
 
 The app follows the macOS system or per-app language setting. Japanese and English are supported; other languages fall back to English. There is no in-app language switch. File names and paths are not translated.
 
 ### Availability, first launch, and manual updates
 
-Source publication uses [GitHub main](https://github.com/kimipooh/folder-merger-for-macos/tree/main). No Release is available yet. After publication, choose the app ZIP from [GitHub Releases](https://github.com/kimipooh/folder-merger-for-macos/releases). GitHub's automatically generated `Source code (zip)` contains source only, not the app.
+Download `Folder-Merger-v1.0.0-macOS-Apple-Silicon.zip` from [GitHub Releases v1.0.0](https://github.com/kimipooh/folder-merger-for-macos/releases/tag/v1.0.0) ([latest release](https://github.com/kimipooh/folder-merger-for-macos/releases/latest)), then extract it to get `Folder Merger.app`. GitHub’s automatically generated `Source code (zip)` and `Source code (tar.gz)` contain source only and do not include the app.
 
 The app has no Developer ID signature or Apple notarization. If first launch is blocked, try opening once → System Settings → Privacy & Security → Open Anyway. A new version may require approval again.
 
 1. Select “Check for Updates…” in the Folder Merger menu. Only this action connects to GitHub. There are no launch-time or periodic checks, automatic downloads, installations, or restarts. The menu is disabled while checking. Merge state and progress are unaffected.
 2. If “A new version is available. Current: <current> · Release: <release>” appears, select “Open Release Page” to open your default browser. Download and extract the app ZIP. “Cancel” leaves the page unopened.
-3. Quit the old app, replace the `.app`, and launch the new version. The four attribute preferences and the same-path file rule persist between versions with the same bundle ID. Detailed logging starts off each time.
+3. Quit the old app, replace the `.app`, and launch the new version. From 1.0.0 onward, the four attribute preferences and the same-path file rule persist between versions with the same bundle ID (`io.github.kimipooh.foldermerger`). The public ID replaces the temporary `org.foldermerger.local` ID; preferences from that old ID are not carried over. Detailed logging starts off each time.
 
 Other results mean the following. You can retry after completion or an error.
 

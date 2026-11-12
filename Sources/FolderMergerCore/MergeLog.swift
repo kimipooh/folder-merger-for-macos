@@ -1,27 +1,35 @@
 import Foundation
 
 public enum MergeLogKind: String, CaseIterable { case summary, detailed }
-
 public enum MergeLogFormat: String, CaseIterable { case csv, txt }
 
-/// Single-worker journal. Only one record and a fixed read buffer are retained.
-/// The owner releases the previous journal at the next run; deinit removes it on exit.
+/// One worker owns the journal. Export retains a fixed buffer and one record, never all events.
 public final class MergeLog: @unchecked Sendable {
-    public let started: Date
+    private struct Record: Codable {
+        let type: String
+        var values: [String]
+        var outputFinalized: Bool? = nil
+    }
+    public let started = Date()
     public private(set) var recordingError: String?
     private let url: URL
-    private var writer: FileHandle?
     private let bundle: Bundle
-    private let encoder = JSONEncoder()
+    private let destination: URL
+    private var writer: FileHandle?
     private var finished = false
     private var outputFinalized = false
+    private var cleanupFailed = false
+    private var finalizedCopyCount = 0
     private var decisionCount = 0
-    private var directoryCount = 0
+    private var pendingConflict: [String]?
     private var finalRows: [[String]] = []
+    private var summaryResult = ""
+    static let csvColumnIdentifiers = ["time", "action", "relative_path", "source", "destination", "decision", "reason", "notes"]
+    static let summaryColumnIdentifiers = ["category", "source", "destination", "details"]
 
     public init(request: MergeRequest, detailed: Bool, language: String? = nil,
                 temporaryDirectory: URL = FileManager.default.temporaryDirectory) {
-        started = Date()
+        destination = request.output
         url = temporaryDirectory.appendingPathComponent("FolderMerger-log-\(UUID().uuidString).jsonl")
         bundle = language.flatMap { Bundle.module.path(forResource: $0, ofType: "lproj") }.flatMap(Bundle.init(path:)) ?? .module
         do {
@@ -31,7 +39,6 @@ public final class MergeLog: @unchecked Sendable {
         } catch { recordingError = error.localizedDescription }
         condition("Start time", Self.time(started))
         for (i, input) in request.inputs.enumerated() { condition("Input order", "\(i + 1)", input: input.path) }
-        condition("Final destination", request.output.path)
         let o = request.options
         for (key, enabled) in [("File creation and modification dates", o.fileDates), ("File permissions", o.filePermissions),
                                ("Folder creation and modification dates", o.directoryDates), ("Extended attributes and resource forks", o.extendedAttributes), ("Detailed per-file log (screen display)", detailed)] {
@@ -40,67 +47,125 @@ public final class MergeLog: @unchecked Sendable {
         condition("When different files have the same path", text(o.samePathPolicy.localizationKey))
     }
     deinit { try? writer?.close(); removeTemporaryLog() }
-    /// Unlink is also safe while a worker still has the journal open during termination.
     public func removeTemporaryLog() { try? FileManager.default.removeItem(at: url) }
     private func text(_ key: String) -> String { bundle.localizedString(forKey: key, value: nil, table: nil) }
     private func condition(_ key: String, _ value: String, input: String = "") {
-        append([Self.time(started), text("Run conditions"), "", input, "", "", "", "", "", text(key) + ": " + value])
+        append("condition", [Self.time(started), text("Inputs and settings"), "", input, "", "", text(key) + ": " + value, ""])
     }
-    private func append(_ row: [String]) {
+    private func append(_ type: String, _ row: [String]) {
         guard recordingError == nil else { return }
         do {
-            var data = try encoder.encode(row); data.append(10)
+            var data = try JSONEncoder().encode(Record(type: type, values: row, outputFinalized: type == "result" ? outputFinalized : nil)); data.append(10)
             try writer?.write(contentsOf: data)
         } catch { recordingError = error.localizedDescription }
     }
-    public func record(_ event: MergeEvent) {
+    public func record(_ e: MergeEvent) {
         guard !finished else { return }
-        if event.kind == .directoryCreated { directoryCount += 1 }
-        let selection = event.selection
-        let action: String
-        switch event.kind {
-        case .fileSelected: action = "File selection"
-        case .finalSelection: action = "Conflicting File Decisions"
-        case .conflict: action = "Conflicting items"
-        case .skipped: action = "Skipped identical file"
-        case .copied: action = "Copied"
-        case .directoryCreated: action = "Created folder"
-        case .warning: action = "Warning"
-        case .error: action = "Failed"
-        case .cancelled: action = "Cancelled"
-        case .completed: action = "Completed"
-        case .phase: action = "Phase"
-        }
-        if let decision = event.finalSelection {
-            decisionCount += 1
-            append([Self.time(event.timestamp), text(action), decision.relativePath, decision.selectedInput.path,
-                    decision.rejectedInputs.map(\.path).joined(separator: "; "),
-                    text(decision.scanCompleted ? "Scan complete" : "Scan incomplete; decisions so far only"),
-                    text(decision.policy.localizationKey), "", "", ""])
+        var row = [Self.time(e.timestamp), "", e.relativePath ?? "", e.sourceFile?.path ?? e.sourceInput?.path ?? "",
+                   e.destinationFile?.path ?? e.comparedInput?.path ?? "", "", "", ""]
+        var type = "activity"
+        switch e.kind {
+        case .copied: type = "copy"; row[1] = text("Copy (temporary folder)"); row[7] = text("Planned copy destination (still inside the temporary folder at this point).")
+        case .directoryCreated: row[1] = text("Create folder (temporary folder)")
+        case .skipped: row[1] = text("Skip identical content")
+        case .fileSelected:
+            row[1] = text("Same-name file selection (intermediate)")
+            if let s = e.selection {
+                row[3] = s.selectedInput.path; row[4] = s.rejectedInput.path
+                row[5] = selectionDecision(selected: s.selectedInput.path, rejected: [s.rejectedInput.path])
+                row[6] = selectionReason(s.policy)
+                if let selected = s.selectedModificationTime, let rejected = s.rejectedModificationTime {
+                    row[6] = String(format: text("The selected file has a newer modification time (selected: %@ = %@; rejected: %@ = %@)."), s.selectedInput.path, Self.modificationTime(selected), s.rejectedInput.path, Self.modificationTime(rejected))
+                }
+            }
+        case .finalSelection:
+            type = "selection"; decisionCount += 1
+            row[1] = text("Same-name file final selection")
+            if let d = e.finalSelection {
+                row[3] = d.selectedInput.path; row[4] = d.rejectedInputs.map(\.path).joined(separator: "; ")
+                row[5] = selectionDecision(selected: d.selectedInput.path, rejected: d.rejectedInputs.map(\.path), final: true)
+                row[6] = selectionReason(d.policy)
+                if let selectedTime = d.selectedModificationTime {
+                    let rejectedTimes = zip(d.rejectedInputs, d.rejectedModificationTimes).map { "\($0.path) = \(Self.modificationTime($1))" }.joined(separator: "; ")
+                    row[6] = String(format: text("The selected file has a newer modification time (selected: %@ = %@; rejected: %@)."), d.selectedInput.path, Self.modificationTime(selectedTime), rejectedTimes)
+                }
+                row[7] = text(d.scanCompleted ? "Scan complete" : "Scan incomplete; decisions so far only")
+            }
+        case .conflict:
+            pendingConflict = [e.relativePath ?? "", e.sourceInput?.path ?? "", e.comparedInput?.path ?? "", e.message]
             return
+        case .warning:
+            type = "warning"; row[1] = text("Warning")
+            let attributeKey: String
+            switch e.attribute {
+            case "権限ビット": attributeKey = "File permissions"
+            case "変更日": attributeKey = "Modification date"
+            case "作成日": attributeKey = "Creation date"
+            default: attributeKey = "Extended attributes and resource forks"
+            }
+            row[6] = text(attributeKey) + ": " + text("An attribute could not be preserved. The merge continued.")
+            row[7] = [e.attribute, e.reason].compactMap { $0 }.joined(separator: ": ")
+        case .error:
+            type = "error"; row[1] = text("Error")
+            if let conflict = pendingConflict {
+                row[2] = conflict[0]; row[3] = conflict[1]; row[4] = conflict[2]
+                let kind = conflict[3] == "Different same-name files" ? "Different same-name files" : "File and folder name conflict"
+                row[6] = String(format: text("%@ at %@ from %@ and %@; merging stopped and output was not finalized."), text(kind), conflict[0], conflict[1], conflict[2])
+                row[7] = String(format: text("Conflicting items:\nRelative path: %@\nInput: %@\nRelative path: %@\nInput: %@"), conflict[0], conflict[1], conflict[0], conflict[2])
+                for key in ["Modification dates are equal.", "Modification dates cannot be compared."] where e.message.contains(L(key)) {
+                    row[7] += "\n" + text(key)
+                }
+                pendingConflict = nil
+            } else {
+                row[6] = text(e.logOperation ?? (e.duringFinalization ? "Output publication failed. The merge stopped." : "An input/output or validation operation failed. The merge stopped.")) + " " + text("Target") + ": " + (e.affectedPath ?? destination.path)
+                row[7] = e.message
+            }
+        case .cancelled:
+            type = "error"; row[1] = text("Cancellation"); row[6] = text("The merge was cancelled.") + " " + text("Target") + ": " + (e.affectedPath ?? destination.path)
+        case .outputFinalized: row[1] = text("Finalize output"); row[7] = text("Merge destination") + ": " + destination.path
+        case .rollback: row[1] = text("Rollback"); row[7] = text("Merge destination") + ": " + destination.path; row[6] = text("Published items were returned to the temporary folder.")
+        case .completed: row[1] = text("Processing finished")
+        case .phase:
+            row[1] = text("Processing stage")
+            let keys = ["Validate and scan inputs", "Build in temporary folder", "Apply folder attributes (deepest first)", "Finalize with RENAME_EXCL"]
+            row[6] = keys.first { L($0) == e.message }.map { text($0 == "Finalize with RENAME_EXCL" ? "Publish output" : $0) } ?? e.message
         }
-        append([Self.time(event.timestamp), text(action), event.relativePath ?? "",
-                selection?.selectedInput.path ?? event.sourceInput?.path ?? "",
-                selection?.rejectedInput.path ?? event.comparedInput?.path ?? "",
-                selection == nil ? "" : text("Selected / rejected"),
-                selection.map { text($0.policy.localizationKey) } ?? "",
-                selection?.selectedModificationTime.map { Self.modificationTime($0) } ?? "",
-                selection?.rejectedModificationTime.map { Self.modificationTime($0) } ?? "", event.message])
+        if type == "warning" { row[6] += " " + text("Target") + ": " + (e.affectedPath ?? e.sourceInput?.appendingPathComponent(e.relativePath ?? "").path ?? e.relativePath ?? "") }
+        append(type, row)
     }
+    private func selectionReason(_ policy: SamePathPolicy) -> String {
+        switch policy {
+        case .earlier: return text("The input folder added first has priority.")
+        case .later: return text("The input folder added later has priority.")
+        case .newer: return text("The selected file has a newer modification time.")
+        case .stop: return text("Stop when same-name files differ.")
+        }
+    }
+    private func selectionDecision(selected: String, rejected: [String], final: Bool = false) -> String {
+        String(format: text(final ? "Final selected: %@ / Rejected: %@" : "Selected: %@ / Rejected: %@"), selected, rejected.isEmpty ? text("None") : rejected.joined(separator: "; "))
+    }
+    private var state: String { text(outputFinalized ? "Reflected in finalized output." : "Output is not finalized.") }
     public func finish(_ result: MergeResult) {
         guard !finished else { return }
         outputFinalized = result.output != nil
-        let end = Date()
+        cleanupFailed = result.cleanupFailed
+        finalizedCopyCount = outputFinalized ? result.counters.copied : 0
         let status: String
         switch result.status { case .success: status = "Completed"; case .warnings: status = "Completed with warnings"
         case .failure: status = "Failed"; case .cancelled: status = "Cancelled" }
         let c = result.counters
         let counts = String(format: text("Copied: %lld · Identical files skipped: %lld · Warnings: %lld · Errors: %lld"), c.copied, c.skipped, c.warnings, c.errors)
-        let output = result.output.map { text("Output finalized") + ": " + $0.path }
-            ?? text(result.cleanupFailed ? "Output not finalized; temporary folder cleanup failed." : "Output not finalized; no temporary output remains.")
-        finalRows.append([Self.time(end), text("Final result"), "", "", "", text(status), "", "", "", counts + "; " + output])
-        finalRows.append([Self.time(end), text("Final result"), "", "", "", "", "", "", "", text("End time") + ": " + Self.time(end)])
-        for row in finalRows { append(row) }
+        let publication = text(outputFinalized ? "Output finalized" : result.cleanupFailed
+            ? "Output is not finalized; cleanup or rollback failed. Check remaining paths."
+            : "Output is not finalized. Nothing was added to the destination.")
+        let remaining = result.cleanupFailed ? " " + result.remainingPaths.joined(separator: "; ") : ""
+        let details = counts + "; " + String(format: text("Conflicting paths: %lld"), decisionCount) + "; " + publication + remaining
+        summaryResult = text(status) + "; " + text("Copied files") + ": \(outputFinalized ? c.copied : 0); " + publication + remaining
+        let destinationNote = text("Merge destination") + ": " + destination.path
+        let cleanupNotes = result.cleanupFailed ? ([result.error?.localizedDescription ?? ""] + result.remainingPaths).filter { !$0.isEmpty } : []
+        finalRows = [[Self.time(Date()), text("Final result"), "", "", "", text(status), details,
+                      ([destinationNote] + cleanupNotes).joined(separator: "\n")]]
+        for row in finalRows { append("result", row) }
         finished = true
         do { try writer?.close() } catch { recordingError = error.localizedDescription }
         writer = nil
@@ -112,97 +177,7 @@ public final class MergeLog: @unchecked Sendable {
     public func suggestedFilename(kind: MergeLogKind) -> String {
         suggestedFilename.replacingOccurrences(of: "FolderMerger-log-", with: "FolderMerger-" + kind.rawValue + "-log-")
     }
-    public func export(to destination: URL, format: MergeLogFormat, kind: MergeLogKind = .detailed) throws {
-        guard finished else { throw CocoaError(.fileWriteUnknown) }
-        // NSSavePanel owns replacement approval. Conversion writes to an adjacent temporary
-        // file first, so errors never truncate an existing export.
-        let temporary = destination.deletingLastPathComponent().appendingPathComponent(".FolderMerger-export-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: temporary) }
-        try Data().write(to: temporary, options: .withoutOverwriting)
-        let output = try FileHandle(forWritingTo: temporary)
-        defer { try? output.close() }
-        func write(_ s: String) throws { try output.write(contentsOf: Data(s.utf8)) }
-        if kind == .summary {
-            try exportSummary(format: format, output: output)
-            try output.close()
-            if FileManager.default.fileExists(atPath: destination.path) {
-                _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
-            } else { try FileManager.default.moveItem(at: temporary, to: destination) }
-            return
-        }
-        let headings = ["Time", "Action", "Relative Path", "Input", "Compared With", "Decision", "Applied Rule", "Input Modified", "Compared Modified", "Details"].map(text)
-        if format == .csv { try output.write(contentsOf: Data([0xef, 0xbb, 0xbf])); try write(Self.csv(headings, metadataHeading: text("Protected columns"))) }
-        else { try write(text("Run conditions") + "\n") }
-        if let recordingError {
-            let warning = text("Incomplete log") + ": " + recordingError
-            if format == .csv { try write(Self.csv(["", text("Warning"), "", "", "", "", "", "", "", warning])) }
-            else { try write(warning + "\n") }
-        }
-        let decisionState = text(outputFinalized ? "Decisions reflected in finalized output." : "Output is not finalized. These are selection decisions only.")
-        func readDecisions(_ body: ([String]) throws -> Void) throws {
-            let handle = try FileHandle(forReadingFrom: url)
-            defer { try? handle.close() }
-            var pending = Data()
-            while let chunk = try handle.read(upToCount: 65536), !chunk.isEmpty {
-                pending.append(chunk)
-                while let newline = pending.firstIndex(of: 10) {
-                    let values = try JSONDecoder().decode([String].self, from: Data(pending[..<newline]))
-                    pending.removeSubrange(...newline)
-                    if values[1] == text("Conflicting File Decisions") { try body(values) }
-                }
-            }
-        }
-        let input: FileHandle
-        do { input = try FileHandle(forReadingFrom: url) }
-        catch {
-            guard recordingError != nil else { throw error }
-            try output.close()
-            if FileManager.default.fileExists(atPath: destination.path) {
-                _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
-            } else { try FileManager.default.moveItem(at: temporary, to: destination) }
-            return
-        }
-        defer { try? input.close() }
-        var buffer = Data()
-        var section = text("Run conditions")
-        var wroteDecisions = false
-        func txtRow(_ values: [String]) throws {
-            try write(zip(headings, values).filter { !$0.1.isEmpty }.map { $0.0 + ": " + $0.1.replacingOccurrences(of: "\r", with: "\\r").replacingOccurrences(of: "\n", with: "\\n") }.joined(separator: " | ") + "\n")
-        }
-        func row(_ data: Data) throws {
-            var values = try JSONDecoder().decode([String].self, from: data)
-            if format == .csv {
-                if values[1] == text("Conflicting File Decisions") { values[9] = decisionState }
-                try write(Self.csv(values)); return
-            }
-            if values[1] != text("Run conditions"), !wroteDecisions {
-                wroteDecisions = true
-                try write("\n" + text("Conflicting File Decisions") + "\n" + String(format: text("Conflicting paths: %lld"), decisionCount) + "\n" + decisionState + "\n")
-                try readDecisions { try txtRow($0) }
-                section = text("Conflicting File Decisions")
-            }
-            if values[1] == text("Conflicting File Decisions") { return }
-            let next = values[1] == text("Run conditions") ? text("Run conditions") : values[1] == text("Final result") ? text("Final result") : text("Activity log (chronological)")
-            if next != section { section = next; try write("\n" + section + "\n") }
-            // Keep each event on one physical TXT line even for unusual filenames.
-            try txtRow(values)
-        }
-        while let chunk = try input.read(upToCount: 65536), !chunk.isEmpty {
-            buffer.append(chunk)
-            while let newline = buffer.firstIndex(of: 10) {
-                try row(Data(buffer[..<newline])); buffer.removeSubrange(...newline)
-            }
-        }
-        if !buffer.isEmpty && recordingError == nil { throw CocoaError(.fileReadCorruptFile) }
-        try output.close()
-        if FileManager.default.fileExists(atPath: destination.path) {
-            _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
-        } else { try FileManager.default.moveItem(at: temporary, to: destination) }
-    }
-    static let summaryColumnIdentifiers = ["category", "relative_path", "selected_input", "rejected_inputs", "applied_rule", "details"]
-
-    /// Reopen the journal for each section; retain only a read buffer and one record.
-    private func readRows(_ body: ([String]) throws -> Void) throws {
+    private func readRows(_ body: (String, [String]) throws -> Void) throws {
         guard FileManager.default.fileExists(atPath: url.path) else {
             if recordingError != nil { return }
             throw CocoaError(.fileReadNoSuchFile)
@@ -213,58 +188,105 @@ public final class MergeLog: @unchecked Sendable {
         while let chunk = try input.read(upToCount: 65536), !chunk.isEmpty {
             buffer.append(chunk)
             while let newline = buffer.firstIndex(of: 10) {
-                try body(JSONDecoder().decode([String].self, from: Data(buffer[..<newline])))
+                let record = try JSONDecoder().decode(Record.self, from: Data(buffer[..<newline]))
+                try body(record.type, record.values)
                 buffer.removeSubrange(...newline)
             }
         }
         if !buffer.isEmpty && recordingError == nil { throw CocoaError(.fileReadCorruptFile) }
     }
-
-    private func exportSummary(format: MergeLogFormat, output: FileHandle) throws {
-        func write(_ value: String) throws { try output.write(contentsOf: Data(value.utf8)) }
-        let headings = ["Category", "Relative Path", "Selected Input", "Rejected Inputs", "Applied Rule", "Details"].map(text)
+    public func export(to destination: URL, format: MergeLogFormat, kind: MergeLogKind = .detailed) throws {
+        guard finished else { throw CocoaError(.fileWriteUnknown) }
+        let temporary = destination.deletingLastPathComponent().appendingPathComponent(".FolderMerger-export-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        try Data().write(to: temporary, options: .withoutOverwriting)
+        let output = try FileHandle(forWritingTo: temporary)
+        defer { try? output.close() }
+        func write(_ s: String) throws { try output.write(contentsOf: Data(s.utf8)) }
+        func escape(_ s: String) -> String { s.replacingOccurrences(of: "\r", with: "\\r").replacingOccurrences(of: "\n", with: "\\n") }
+        let summary = kind == .summary
+        let labelSeparator = text("Log label separator")
+        let headings = (summary ? ["Category", "Source", "Destination", "Summary details"] : ["Time", "Operation", "Relative Path", "Source / selected input", "Destination / rejected input", "Decision", "Reason", "Notes"]).map(text)
+        let identifiers = summary ? Self.summaryColumnIdentifiers : Self.csvColumnIdentifiers
         func row(_ values: [String]) throws {
-            if format == .csv {
-                try write(Self.csv(values, identifiers: Self.summaryColumnIdentifiers))
-            } else {
-                try write(zip(headings, values).filter { !$0.1.isEmpty }.map {
-                    $0.0 + ": " + $0.1.replacingOccurrences(of: "\r", with: "\\r").replacingOccurrences(of: "\n", with: "\\n")
-                }.joined(separator: " | ") + "\n")
-            }
+            if format == .csv { try write(Self.csv(values, identifiers: identifiers)) }
+            else { try write(zip(headings, values).filter { !$0.1.isEmpty }.map { $0.0 + ": " + escape($0.1) }.joined(separator: " | ") + "\n") }
         }
-        func section(_ key: String) throws { if format == .txt { try write("\n" + text(key) + "\n") } }
+        func section(_ key: String) throws { if format == .txt { try write(text(key) + "\n") } }
         if format == .csv {
             try output.write(contentsOf: Data([0xef, 0xbb, 0xbf]))
-            try write(Self.csv(headings, metadataHeading: text("Protected columns"), identifiers: Self.summaryColumnIdentifiers))
-        }
-        try section("Run conditions")
-        try readRows { r in
-            if r[1] == text("Run conditions") {
-                try row([text(r[3].isEmpty ? "Run conditions" : "Input"), "", r[3], "", "", r[9]])
-            }
-        }
-        let state = text(outputFinalized ? "Decisions reflected in finalized output." : "Output is not finalized. These are selection decisions only.")
-        try section("Conflicting File Decisions")
-        try row([text("Conflicting File Decisions"), "", "", "", "", String(format: text("Conflicting paths: %lld"), decisionCount) + "; " + state])
-        try readRows { r in
-            if r[1] == text("Conflicting File Decisions") {
-                try row([r[1], r[2], r[3], r[4], r[6], r[5] + "; " + state])
-            }
-        }
-        try section("Warnings and errors")
-        if let recordingError { try row([text("Warning"), "", "", "", "", text("Incomplete log") + ": " + recordingError]) }
-        let issues = ["Warning", "Failed", "Cancelled", "Conflicting items"].map(text)
-        try readRows { r in
-            if issues.contains(r[1]) { try row([r[1], r[2], r[3], r[4], r[6], r[9]]) }
+            try write(Self.csv(headings, metadataHeading: text("Protected columns"), identifiers: identifiers))
         }
         try section("Final result")
-        for r in finalRows { try row([r[1], "", "", "", "", [r[5], r[9]].filter { !$0.isEmpty }.joined(separator: "; ")]) }
-        try row([text("Final result"), "", "", "", "", String(format: text("Created folders: %lld"), directoryCount) + "; " + String(format: text("Conflicting paths: %lld"), decisionCount)])
+        if summary && format == .txt {
+            let result = finalRows.first
+            let status = result?[5] ?? text("Failed")
+            try write(text("Status") + labelSeparator + status + "\n")
+            try write(text("Copied files") + labelSeparator + "\(finalizedCopyCount) " + text(finalizedCopyCount == 1 ? "file" : "files") + "\n")
+            try write(text("Merge destination") + labelSeparator + self.destination.path + "\n")
+            if outputFinalized { try write(text("Output") + labelSeparator + text("Finalized") + "\n") }
+            else if !cleanupFailed { try write(text("Output") + labelSeparator + text("Not finalized. Nothing was added to the destination.") + "\n") }
+            else {
+                let remaining = result?[7].components(separatedBy: "\n").dropFirst().joined(separator: "; ") ?? ""
+                try write(text("Output") + labelSeparator + text("Not finalized; cleanup or rollback failed. Check remaining paths.") + (remaining.isEmpty ? "" : " " + remaining) + "\n")
+            }
+            try write(text("Inputs and settings are available in the detailed log.") + "\n")
+        } else {
+            for r in finalRows { try row(summary ? [r[1], "", self.destination.path, summaryResult] : r) }
+        }
+        if summary {
+            try section("Copied files")
+            var copiedCount = 0
+            if outputFinalized {
+                try readRows { type, r in
+                    if type == "copy" {
+                        copiedCount += 1
+                        if format == .txt { try write(escape(r[3]) + " → " + escape(r[4]) + "\n") }
+                        else { try row([text("Copy"), r[3], r[4], ""]) }
+                    }
+                }
+            }
+            if copiedCount == 0 {
+                if format == .txt { try write(text("None") + "\n") }
+                else { try row([text("Copied files"), "", "", text("None")]) }
+            }
+            try section("Warnings and errors")
+            var issueCount = 0
+            try readRows { type, r in
+                if type == "warning" || type == "error" {
+                    issueCount += 1
+                    let details = r[6] + (r[7].isEmpty ? "" : " " + text("Notes") + ": " + escape(r[7]))
+                    if format == .txt { try write(text(r[1]) + ": " + escape(details) + "\n") }
+                    else { try row([r[1], r[3], r[4], details]) }
+                }
+            }
+            if issueCount == 0 {
+                if format == .txt { try write(text("None") + "\n") }
+                else { try row([text("Warnings and errors"), "", "", text("None")]) }
+            }
+        } else {
+            try section("Inputs and settings")
+            try readRows { type, r in if type == "condition" { try row(r) } }
+            try section("Activity log (chronological)")
+            try readRows { type, original in
+                guard type != "condition" && type != "result" else { return }
+                var r = original
+                if type == "selection" {
+                    r[7] = r[7].isEmpty ? state : r[7] + " · " + state
+                }
+                if type == "copy" { r[7] = text("Planned copy destination (still inside the temporary folder at this point).") }
+                try row(r)
+            }
+        }
+        if let recordingError {
+            let message = text("Incomplete log") + ": " + recordingError
+            try row(summary ? [text("Warning"), "", "", message] : ["", text("Warning"), "", "", "", "", message, ""])
+        }
+        try output.close()
+        if FileManager.default.fileExists(atPath: destination.path) {
+            _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
+        } else { try FileManager.default.moveItem(at: temporary, to: destination) }
     }
-
-    // Stable identifiers describe only the original ten columns, in output order.
-    static let csvColumnIdentifiers = ["time", "action", "relative_path", "input", "compared_with",
-                                       "decision", "applied_rule", "input_modified", "compared_modified", "details"]
 
     static func needsCSVProtection(_ value: String) -> Bool {
         let dangerous = CharacterSet(charactersIn: "=+-@\t\r\n＝＋－＠")
@@ -280,8 +302,8 @@ public final class MergeLog: @unchecked Sendable {
         return false
     }
 
-    /// Also accepts the localized eleventh heading. Its metadata describes the
-    /// original ten headings exactly as it does ordinary data rows.
+    /// Also accepts the localized metadata heading. Its metadata describes the
+    /// data headings exactly as it does ordinary data rows.
     static func csv(_ row: [String], metadataHeading: String? = nil, identifiers: [String] = csvColumnIdentifiers) -> String {
         var protected: [String] = []
         var values = row.enumerated().map { index, value in

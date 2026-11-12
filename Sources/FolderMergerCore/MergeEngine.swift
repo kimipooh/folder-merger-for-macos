@@ -35,6 +35,7 @@ public struct MergeError: LocalizedError {
     public let message: String
     public let kind: Kind
     public let cleanupFailed: Bool
+    public var logTarget: String? = nil
     public init(_ message: String, kind: Kind = .failure, cleanupFailed: Bool = false) { self.message = message; self.kind = kind; self.cleanupFailed = cleanupFailed }
     public var errorDescription: String? { message }
 }
@@ -49,6 +50,7 @@ private struct Entry {
     var relative: String
     var hadDecision = false
     var rejectedInputs: [URL] = []
+    var rejectedModificationTimes: [FileModificationTime] = []
     let source: String
     let root: URL
     let info: stat
@@ -79,7 +81,9 @@ public final class MergeEngine {
 
     // Capture errno before any bundle lookup can change it.
     private static func systemError(_ action: String, _ url: URL, code: Int32 = errno) -> MergeError {
-        MergeError(L("%@: %@\n%@", localizedText(action), url.path, String(cString: strerror(code))))
+        var error = MergeError(L("%@: %@\n%@", localizedText(action), url.path, String(cString: strerror(code))))
+        error.logTarget = url.path
+        return error
     }
 
     private static func ancestors(_ url: URL) throws -> Set<Identity> {
@@ -179,6 +183,7 @@ public final class MergeEngine {
                     logEvent: @escaping (MergeEvent) -> Void = { _ in },
                     progress: (MergeProgress) -> Void = { _ in }) -> MergeResult {
         let context = EventContext(detailed: detailedLog, sink: event, logSink: logEvent)
+        context.destination = request.output
         do {
             let output = try execute(request, cancellation: cancellation, context: context, progress: progress)
             let status: MergeStatus = context.warnings.isEmpty ? .success : .warnings
@@ -186,12 +191,13 @@ public final class MergeEngine {
             return MergeResult(status: status, output: output, counters: context.counters, warnings: context.warnings, error: nil)
         } catch {
             let failure = (error as? MergeError) ?? MergeError(error.localizedDescription)
+            if let target = failure.logTarget { context.affectedPath = target }
             let cancelled = failure.kind == .cancelled
             if !cancelled { context.counters.errors += 1 }
             context.emit(cancelled ? .cancelled : .error, message: failure.localizedDescription)
             let status: MergeStatus = cancelled ? .cancelled : .failure
             context.emit(.completed, message: status.label)
-            return MergeResult(status: status, output: nil, counters: context.counters, warnings: context.warnings, error: failure, cleanupFailed: context.cleanupFailed || failure.cleanupFailed)
+            return MergeResult(status: status, output: nil, counters: context.counters, warnings: context.warnings, error: failure, cleanupFailed: context.cleanupFailed || failure.cleanupFailed, remainingPaths: context.remainingPaths)
         }
     }
 
@@ -228,7 +234,9 @@ public final class MergeEngine {
             progress(MergeProgress(phase: phase, completed: completed, total: total, bytesCopied: bytes, currentItem: currentItem, counters: context.counters))
         }
         func conflict(_ a: Entry, _ b: Entry) -> MergeError {
-            context.emit(.conflict, relative: a.relative, source: a.root, compared: b.root, message: L("Conflicting items"), screen: false)
+            context.failureKey = "The merge stopped because same-name items conflict."
+            let conflictKind = a.directory == b.directory ? "Different same-name files" : "File and folder name conflict"
+            context.emit(.conflict, relative: a.relative, source: a.root, compared: b.root, message: conflictKind, screen: false)
             return MergeError(L("Conflicting items:\nRelative path: %@\nInput: %@\nRelative path: %@\nInput: %@", a.relative, a.root.path, b.relative, b.root.path))
         }
         func scan(_ directory: String, root: URL, prefix: String) throws {
@@ -256,6 +264,8 @@ public final class MergeEngine {
                 let url = directory + "/" + name
                 let relative = prefix.isEmpty ? name : prefix + "/" + name
                 currentItem = relative
+                context.affectedPath = url
+                context.failureKey = "An input item could not be read or compared. The merge stopped."
                 let value = try Self.info(path: url)
                 let kind = value.st_mode & S_IFMT
                 guard kind == S_IFDIR || kind == S_IFREG else {
@@ -296,6 +306,7 @@ public final class MergeEngine {
                             let rejected = useNext ? previous : entry
                             context.decision(selected: selected, rejected: rejected, policy: policy)
                             selected.rejectedInputs = previous.rejectedInputs + [rejected.root]
+                            if policy == .newer { selected.rejectedModificationTimes = previous.rejectedModificationTimes + [FileModificationTime(rejected.info.st_mtimespec)] }
                             selected.hadDecision = true
                             plan[index] = selected
                         }
@@ -312,7 +323,9 @@ public final class MergeEngine {
         func publishDecisions(scanCompleted: Bool) {
             for entry in plan where entry.hadDecision {
                 let decision = ConflictingFileDecision(relativePath: entry.relative, selectedInput: entry.root,
-                    rejectedInputs: entry.rejectedInputs, policy: request.options.samePathPolicy, scanCompleted: scanCompleted)
+                    rejectedInputs: entry.rejectedInputs, policy: request.options.samePathPolicy, scanCompleted: scanCompleted,
+                    selectedModificationTime: request.options.samePathPolicy == .newer ? FileModificationTime(entry.info.st_mtimespec) : nil,
+                    rejectedModificationTimes: entry.rejectedModificationTimes)
                 context.deliver(MergeEvent(timestamp: Date(), kind: .finalSelection, relativePath: entry.relative,
                     sourceInput: entry.root, bytes: nil, attribute: nil, reason: nil, message: L("Conflicting File Decisions"),
                     counters: context.counters, selection: nil, finalSelection: decision))
@@ -335,6 +348,8 @@ public final class MergeEngine {
             var created: [Identity: Entry] = [:]
             for (index, entry) in plan.enumerated() {
                 currentItem = entry.relative
+                context.affectedPath = entry.source
+                context.failureKey = "A file or folder could not be copied to the temporary folder. The merge stopped."
                 try cancellation.check()
                 let targetPath = temporary.path + "/" + entry.relative
                 let target = URL(fileURLWithPath: targetPath)
@@ -375,12 +390,17 @@ public final class MergeEngine {
                 try applyAttributes(entry, target: temporary.path + "/" + entry.relative, options: request.options, context: context)
             }
             try cancellation.check()
+            context.failureKey = "Output publication failed. The merge stopped."
+            context.finalizing = true
+            context.affectedPath = request.output.path
             try beforeCommit?()
             try cancellation.check()
+            context.failureKey = "The destination changed or gained other items. Publication stopped."
             guard Identity(try Self.info(request.output)) == destinationIdentity else {
                 throw MergeError(L("The destination folder changed during the merge: %@", request.output.path))
             }
             try Self.checkEmpty(request.output, excluding: temporary.lastPathComponent)
+            context.failureKey = "Output publication failed. The merge stopped."
             // Anchor publication and rollback to the opened directories.
             let destinationFD = open(request.output.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
             guard destinationFD >= 0 else { throw Self.systemError("Cannot inspect the item", request.output) }
@@ -416,11 +436,18 @@ public final class MergeEngine {
                           Identity(value) == identity,
                           renameatx_np(destinationFD, name, temporaryFD, name, UInt32(RENAME_EXCL)) == 0 else {
                         context.cleanupFailed = true
+                        context.remainingPaths = published.compactMap { item in
+                            var remaining = stat()
+                            return fstatat(destinationFD, item.0, &remaining, AT_SYMLINK_NOFOLLOW) == 0 && Identity(remaining) == item.1
+                                ? request.output.appendingPathComponent(item.0).path : nil
+                        } + [temporary.path]
                         throw MergeError(L("%@\nRollback could not restore an item: %@", error.localizedDescription, request.output.appendingPathComponent(name).path), cleanupFailed: true)
                     }
                 }
+                context.emit(.rollback, message: L("Output publication rolled back"), screen: false)
                 throw error
             }
+            context.emit(.outputFinalized, message: L("Output finalized"), screen: false)
             return request.output
         } catch {
             if context.cleanupFailed { throw error }
@@ -428,6 +455,7 @@ public final class MergeEngine {
             do { try FileManager.default.removeItem(at: temporary) }
             catch let cleanupError {
                 context.cleanupFailed = true
+                context.remainingPaths = [temporary.path]
                 throw MergeError(L("%@\nCannot remove the temporary folder: %@\n%@", error.localizedDescription, temporary.path, cleanupError.localizedDescription))
             }
             throw error
@@ -490,6 +518,8 @@ public final class MergeEngine {
     }
 
     private func applyAttributes(_ entry: Entry, target: String, options: MergeOptions, context: EventContext) throws {
+        context.affectedPath = target
+        context.failureKey = "File or folder attributes could not be preserved. The merge stopped."
         func apply(_ attribute: String, _ operation: () -> Int32) throws {
             let code = attributeOperation(entry.relative, attribute, operation)
             if code == ENOTSUP || code == EOPNOTSUPP {
@@ -618,9 +648,10 @@ public struct MergeResult {
     public let warnings: [AttributeWarning]
     public let error: MergeError?
     public var cleanupFailed: Bool = false
+    public var remainingPaths: [String] = []
 }
 public struct MergeEvent: Sendable {
-    public enum Kind: Sendable { case conflict, finalSelection, fileSelected, phase, directoryCreated, copied, skipped, warning, error, cancelled, completed }
+    public enum Kind: Sendable { case outputFinalized, rollback, conflict, finalSelection, fileSelected, phase, directoryCreated, copied, skipped, warning, error, cancelled, completed }
     public let timestamp: Date
     public let kind: Kind
     public let relativePath: String?
@@ -633,6 +664,11 @@ public struct MergeEvent: Sendable {
     public let selection: FileSelection?
     public var comparedInput: URL? = nil
     public var finalSelection: ConflictingFileDecision? = nil
+    public var sourceFile: URL? = nil
+    public var destinationFile: URL? = nil
+    public var duringFinalization: Bool = false
+    public var logOperation: String? = nil
+    public var affectedPath: String? = nil
     public var line: String {
         L("%@ %@%@%@%@", timestamp.formatted(date: .omitted, time: .standard), message,
           relativePath.map { L(" %@", $0) } ?? "",
@@ -647,13 +683,18 @@ private final class EventContext {
     var counters = MergeCounters()
     var warnings: [AttributeWarning] = []
     var cleanupFailed = false
+    var destination: URL?
+    var affectedPath: String?
+    var finalizing = false
+    var failureKey = "The merge request could not be validated. The merge stopped."
+    var remainingPaths: [String] = []
     init(detailed: Bool, sink: @escaping (MergeEvent) -> Void, logSink: @escaping (MergeEvent) -> Void) { self.detailed = detailed; self.sink = sink; self.logSink = logSink }
     func deliver(_ event: MergeEvent, screen: Bool = true) {
         logSink(event)
         if screen { sink(event) }
     }
     func emit(_ kind: MergeEvent.Kind, relative: String? = nil, source: URL? = nil, compared: URL? = nil, bytes: Int64? = nil, attribute: String? = nil, reason: String? = nil, message: String, screen: Bool = true) {
-        deliver(MergeEvent(timestamp: Date(), kind: kind, relativePath: relative, sourceInput: source, bytes: bytes, attribute: attribute, reason: reason, message: message, counters: counters, selection: nil, comparedInput: compared), screen: screen)
+        deliver(MergeEvent(timestamp: Date(), kind: kind, relativePath: relative, sourceInput: source, bytes: bytes, attribute: attribute, reason: reason, message: message, counters: counters, selection: nil, comparedInput: compared, duringFinalization: finalizing, logOperation: failureKey, affectedPath: affectedPath), screen: screen)
     }
     func decision(selected: Entry, rejected: Entry, policy: SamePathPolicy) {
         let selection = FileSelection(selectedInput: selected.root, rejectedInput: rejected.root, policy: policy,
@@ -665,7 +706,10 @@ private final class EventContext {
                         counters: counters, selection: selection))
     }
     func detail(_ kind: MergeEvent.Kind, entry: Entry, bytes: Int64? = nil, message: String) {
-        emit(kind, relative: entry.relative, source: entry.root, bytes: bytes, message: message, screen: detailed)
+        deliver(MergeEvent(timestamp: Date(), kind: kind, relativePath: entry.relative,
+            sourceInput: entry.root, bytes: bytes, attribute: nil, reason: nil, message: message,
+            counters: counters, selection: nil, sourceFile: URL(fileURLWithPath: entry.source),
+            destinationFile: destination?.appendingPathComponent(entry.relative)), screen: detailed)
     }
 }
 public struct ExecutionStep: Sendable {

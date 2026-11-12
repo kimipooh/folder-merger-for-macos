@@ -7,6 +7,8 @@ public struct ConflictingFileDecision: Sendable {
     public let rejectedInputs: [URL]
     public let policy: SamePathPolicy
     public let scanCompleted: Bool
+    public var selectedModificationTime: FileModificationTime? = nil
+    public var rejectedModificationTimes: [FileModificationTime] = []
     public var description: String {
         L("Path: %@ | Selected: %@ | Rejected: %@ | Rule: %@", relativePath, selectedInput.path,
           rejectedInputs.map(\.path).joined(separator: "; "), policy.label)
